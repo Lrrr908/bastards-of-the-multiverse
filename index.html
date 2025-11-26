@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>BASTARDS//MULTIVERSE - SYSTEM ACCESS</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
     
@@ -20,6 +21,10 @@
       box-sizing: border-box;
       margin: 0;
       padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
     }
 
     body {
@@ -141,6 +146,7 @@
       position: relative;
       padding: 0.5rem 0;
       transition: all 0.3s;
+      cursor: pointer;
     }
 
     .nav-links a::before {
@@ -161,10 +167,25 @@
       left: -20px;
     }
 
+    /* SECTION ANIMATIONS */
+    section {
+      opacity: 0;
+      transform: translateY(50px);
+      transition: opacity 0.8s ease-out, transform 0.8s ease-out;
+    }
+
+    section.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
     /* HERO SECTION */
     .hero {
       padding: 4rem 0;
       position: relative;
+      min-height: 90vh;
+      display: flex;
+      align-items: center;
     }
 
     .hero-grid {
@@ -343,6 +364,9 @@
     .section {
       padding: 4rem 0;
       border-top: 1px solid rgba(0, 255, 65, 0.2);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
     }
 
     .section-grid {
@@ -435,6 +459,286 @@
       font-weight: 700;
     }
 
+    /* COLOR MATCH WIDGET INTEGRATION */
+    #colormatch {
+      background: rgba(0, 255, 65, 0.02);
+      border-top: 2px solid var(--primary);
+      border-bottom: 2px solid var(--primary);
+      padding: 4rem 0;
+      min-height: 100vh;
+    }
+
+    .cmw-wrap {
+      font-family: 'Orbitron', monospace !important;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      background: transparent !important;
+    }
+
+    .cmw-wrap h5 {
+      font-size: 2.5rem;
+      margin: 0 0 32px;
+      font-weight: 900;
+      color: var(--primary);
+      text-align: center;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      text-shadow: 0 0 20px var(--glow);
+    }
+
+    .cmw-section {
+      margin-bottom: 24px;
+      padding: 24px;
+      border: 2px solid var(--primary);
+      border-radius: 0;
+      background: rgba(0, 255, 65, 0.03);
+      box-shadow: 0 0 20px var(--glow);
+      transition: all 0.3s;
+    }
+
+    .cmw-section:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 30px var(--glow);
+    }
+
+    .cmw-section h6 {
+      font-size: 1.1rem;
+      margin: 0 0 20px;
+      font-weight: 600;
+      color: var(--primary);
+      text-align: center;
+      letter-spacing: 0.15em;
+    }
+
+    .cmw-input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .cmw-values-section {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .cmw-value-type-selector {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    .cmw-value-type-select {
+      padding: 12px 16px;
+      font-size: 16px;
+      border: 2px solid var(--primary);
+      border-radius: 0;
+      background: rgba(0, 0, 0, 0.8);
+      color: var(--primary);
+      cursor: pointer;
+      min-width: 180px;
+      text-align: center;
+      font-family: 'Orbitron', monospace;
+    }
+
+    .cmw-value-type-select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 10px var(--glow);
+    }
+
+    .cmw-color-preview-container {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 20px;
+      margin: 16px auto;
+      flex-wrap: wrap;
+      min-height: 80px;
+      position: relative;
+    }
+
+    .cmw-color-preview {
+      width: 60px;
+      height: 60px;
+      border: 3px solid var(--primary);
+      border-radius: 0;
+      background: rgba(0, 0, 0, 0.8);
+      transition: all 0.3s ease;
+      position: relative;
+      display: block;
+      flex-shrink: 0;
+      box-shadow: 0 0 15px var(--glow);
+    }
+
+    .cmw-selected-color-info {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      padding: 16px;
+      background: rgba(0, 255, 65, 0.05);
+      border: 2px solid var(--primary);
+      border-radius: 0;
+      min-width: 180px;
+      max-width: 250px;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .cmw-selected-color-info.show {
+      display: flex;
+    }
+
+    .cmw-selected-color-library {
+      font-size: 15px;
+      color: var(--primary);
+      text-align: center;
+      font-weight: 600;
+    }
+
+    .cmw-selected-color-lab {
+      font-size: 13px;
+      color: var(--accent);
+      text-align: center;
+      font-family: 'Courier New', monospace;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 8px;
+      border-radius: 0;
+      border: 1px solid var(--primary);
+    }
+
+    .cmw-value-inputs {
+      display: none;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .cmw-value-inputs.active {
+      display: flex;
+    }
+
+    .cmw-wrap input {
+      padding: 12px 16px;
+      font-size: 16px;
+      border: 2px solid var(--primary);
+      border-radius: 0;
+      transition: all 0.2s;
+      background: rgba(0, 0, 0, 0.8);
+      color: var(--primary);
+      width: 100%;
+      max-width: 350px;
+      font-family: 'Orbitron', monospace;
+    }
+
+    .cmw-wrap input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 10px var(--glow);
+    }
+
+    .cmw-wrap button {
+      padding: 12px 32px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 2px solid var(--primary);
+      background: transparent;
+      color: var(--primary);
+      border-radius: 0;
+      transition: all 0.3s;
+      white-space: nowrap;
+      font-family: 'Orbitron', monospace;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cmw-wrap button::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: var(--primary);
+      transition: all 0.3s;
+      z-index: -1;
+    }
+
+    .cmw-wrap button:hover {
+      color: #000;
+      box-shadow: 0 0 20px var(--glow);
+    }
+
+    .cmw-wrap button:hover::before {
+      left: 0;
+    }
+
+    .cmw-library-toggles {
+      margin-bottom: 24px;
+      padding: 20px;
+      background: rgba(0, 255, 65, 0.03);
+      border: 2px solid var(--primary);
+      border-radius: 0;
+      box-shadow: 0 0 15px var(--glow);
+    }
+
+    .cmw-toggle-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .cmw-toggle-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 0;
+      transition: all 0.2s;
+      border: 2px solid transparent;
+    }
+
+    .cmw-toggle-item:hover {
+      background: rgba(0, 255, 65, 0.1);
+      border-color: var(--primary);
+    }
+
+    .cmw-toggle-item input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: var(--primary);
+    }
+
+    .cmw-wrap table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 24px;
+      background: rgba(0, 0, 0, 0.8);
+      border-radius: 0;
+      overflow: hidden;
+      border: 2px solid var(--primary);
+    }
+
+    .cmw-wrap th,
+    .cmw-wrap td {
+      padding: 12px;
+      border-bottom: 1px solid var(--primary);
+      font-size: 14px;
+      text-align: left;
+      color: var(--primary);
+    }
+
+    .cmw-wrap th {
+      background: rgba(0, 255, 65, 0.1);
+      font-weight: 600;
+      color: var(--primary);
+    }
+
     /* COORDINATES */
     .coordinates {
       position: fixed;
@@ -473,6 +777,7 @@
       color: var(--primary);
       text-decoration: none;
       transition: all 0.3s;
+      cursor: pointer;
     }
 
     .footer-links a:hover {
@@ -499,6 +804,156 @@
         grid-template-columns: 1fr;
       }
     }
+
+    /* Additional CMW styles from original */
+    .cmw-lab-group,
+    .cmw-cmyk-group,
+    .cmw-rgb-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .cmw-lab-input,
+    .cmw-cmyk-input,
+    .cmw-rgb-input {
+      width: 80px !important;
+      max-width: 80px !important;
+      text-align: center;
+    }
+
+    .cmw-lab-label,
+    .cmw-cmyk-label,
+    .cmw-rgb-label {
+      font-weight: 600;
+      color: var(--primary);
+      font-size: 14px;
+    }
+
+    .cmw-loading {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin: 20px 0;
+      color: var(--accent);
+    }
+
+    .cmw-loading.show {
+      display: flex;
+    }
+
+    .cmw-spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--grid);
+      border-top: 2px solid var(--primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .cmw-status {
+      margin: 16px 0;
+      padding: 12px;
+      border-radius: 0;
+      display: none;
+      text-align: center;
+      font-weight: 500;
+      border: 2px solid;
+    }
+
+    .cmw-status.success {
+      background: rgba(0, 255, 65, 0.1);
+      color: var(--primary);
+      border-color: var(--primary);
+    }
+
+    .cmw-status.error {
+      background: rgba(255, 0, 128, 0.1);
+      color: var(--secondary);
+      border-color: var(--secondary);
+    }
+
+    .cmw-status.warning {
+      background: rgba(0, 212, 255, 0.1);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .cmw-status.show {
+      display: block;
+    }
+
+    .cmw-swatch {
+      width: 60px;
+      height: 30px;
+      border: 1px solid var(--primary);
+      border-radius: 0;
+    }
+
+    .cmw-suggestions {
+      margin-top: 12px;
+      padding: 0;
+      background: rgba(0, 0, 0, 0.9);
+      border: 1px solid var(--primary);
+      border-radius: 0;
+      display: none;
+      box-shadow: 0 0 20px var(--glow);
+      max-width: 350px;
+      width: 100%;
+      max-height: 300px;
+      overflow-y: auto;
+      position: relative;
+      z-index: 100;
+    }
+
+    .cmw-suggestions.show {
+      display: block;
+    }
+
+    .cmw-suggestions-header {
+      position: sticky;
+      top: 0;
+      background: rgba(0, 255, 65, 0.1);
+      padding: 12px;
+      font-weight: 600;
+      color: var(--primary);
+      border-bottom: 1px solid var(--primary);
+      z-index: 10;
+    }
+
+    .cmw-suggestion {
+      cursor: pointer;
+      padding: 12px 16px;
+      margin: 2px 0;
+      border-radius: 0;
+      transition: background 0.1s ease;
+      color: var(--primary);
+      background: rgba(0, 0, 0, 0.8);
+      border: 1px solid var(--primary);
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+      position: relative;
+    }
+
+    .cmw-suggestion:hover {
+      background: rgba(0, 255, 65, 0.2);
+      color: var(--primary);
+      border-color: var(--accent);
+    }
+
+    .cmw-brand-hint {
+      color: var(--accent);
+      font-size: 0.9em;
+    }
   </style>
 </head>
 <body>
@@ -513,11 +968,11 @@
         </div>
       </div>
       <nav class="nav-links">
-        <a href="#figures">FIGURES</a>
-        <a href="#colorlab">COLOR.LAB</a>
-        <a href="#protocol">PROTOCOL</a>
-        <a href="#download">DOWNLOAD</a>
-        <a href="#contact">CONTACT</a>
+        <a onclick="scrollToSection('figures')">FIGURES</a>
+        <a onclick="scrollToSection('colorlab')">COLOR.LAB</a>
+        <a onclick="scrollToSection('colormatch')">COLOR.MATCH</a>
+        <a onclick="scrollToSection('protocol')">PROTOCOL</a>
+        <a onclick="scrollToSection('contact')">CONTACT</a>
       </nav>
     </div>
   </header>
@@ -525,7 +980,7 @@
   <div class="container">
     
     <!-- HERO -->
-    <section class="hero">
+    <section class="hero visible">
       <div class="hero-grid">
         <div>
           <div class="system-label">CUSTOM 3D FABRICATION SYSTEM</div>
@@ -535,8 +990,8 @@
             Real resin, filament, and Bastone spot matching. Every build handled direct.
           </p>
           <div class="cta-buttons">
-            <button class="btn">INITIALIZE FIGURE</button>
-            <button class="btn btn-secondary">ACCESS COLOR.LAB</button>
+            <button class="btn" onclick="scrollToSection('figures')">INITIALIZE FIGURE</button>
+            <button class="btn btn-secondary" onclick="scrollToSection('colormatch')">ACCESS COLOR.MATCH</button>
           </div>
           <div class="system-note">
             >> NO CART. NO CHECKOUT. Generate project link → DM on Instagram → Human builds it.
@@ -591,7 +1046,7 @@
           <ul class="feature-list">
             <li><strong>CUSTOM FIGURES</strong> — Sculpted and printed in house. Modular parts. Full color zone control.</li>
             <li><strong>BOTMCMS ENGINE</strong> — LittleCMS powered brain. Understands Bastone C, resin, filament, hex, RGB, CMYK, paint chips.</li>
-            <li><strong>COLOR.LAB</strong> — Input any color. Get real material matches with delta E accuracy ratings.</li>
+            <li><strong>COLOR.MATCH</strong> — Input any color. Get real material matches with delta E accuracy ratings.</li>
           </ul>
         </div>
       </div>
@@ -631,7 +1086,157 @@
         </div>
       </div>
     </section>
+  </div>
 
+  <!-- COLOR MATCH WIDGET SECTION -->
+  <section id="colormatch">
+    <div class="cmw-wrap">
+      <h5>+COLOR MATCH</h5>
+      
+      <input type="hidden" id="cmw-api-url" value="http://localhost:3000">
+      
+      <div class="cmw-library-toggles">
+        <h6>Color Libraries</h6>
+        <div class="cmw-toggle-grid">
+          <div class="cmw-toggle-item">
+            <input type="checkbox" id="toggle-pantone" value="pantone" checked>
+            <label for="toggle-pantone">Pantone <span class="cmw-library-count" id="count-pantone">(0)</span></label>
+          </div>
+          <div class="cmw-toggle-item">
+            <input type="checkbox" id="toggle-behr" value="behr" checked>
+            <label for="toggle-behr">Behr <span class="cmw-library-count" id="count-behr">(0)</span></label>
+          </div>
+          <div class="cmw-toggle-item">
+            <input type="checkbox" id="toggle-sherwin" value="sherwin" checked>
+            <label for="toggle-sherwin">Sherwin Williams <span class="cmw-library-count" id="count-sherwin">(0)</span></label>
+          </div>
+          <div class="cmw-toggle-item">
+            <input type="checkbox" id="toggle-bm" value="bm" checked>
+            <label for="toggle-bm">Benjamin Moore <span class="cmw-library-count" id="count-bm">(0)</span></label>
+          </div>
+        </div>
+        
+        <div style="height: 1px; background: linear-gradient(to right, transparent, rgba(0, 255, 65, 0.2) 20%, rgba(0, 255, 65, 0.2) 80%, transparent); margin: 20px 0;"></div>
+        
+        <div style="display: flex; justify-content: center; align-items: center; gap: 24px; margin-top: 16px; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label for="cmw-results-count" style="font-weight: 600; color: var(--primary); white-space: nowrap;">Results per library:</label>
+            <select id="cmw-results-count" class="cmw-value-type-select" style="min-width: 80px;">
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="5">5</option>
+              <option value="10">10</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      
+      <div class="cmw-section">
+        <h6>Color Search</h6>
+        <div class="cmw-input-group">
+          <div class="cmw-values-section">
+            <div class="cmw-value-type-selector">
+              <select id="cmw-search-type-select" class="cmw-value-type-select">
+                <option value="name" selected>Color Number or Hex</option>
+                <option value="lab">Lab Values</option>
+                <option value="cmyk">CMYK Values</option>
+                <option value="rgb">RGB Values</option>
+              </select>
+            </div>
+
+            <div class="cmw-color-preview-container">
+              <div id="cmw-color-preview" class="cmw-color-preview"></div>
+              <div id="cmw-selected-color-info" class="cmw-selected-color-info">
+                <div id="cmw-selected-color-library" class="cmw-selected-color-library"></div>
+                <div id="cmw-selected-color-lab" class="cmw-selected-color-lab"></div>
+              </div>
+            </div>
+
+            <div id="cmw-name-inputs" class="cmw-value-inputs active">
+              <input id="cmw-name-input" class="cmw-name-input" placeholder="Enter color number or hex (e.g., PANTONE 185 C, Behr 3405, #FF0000)">
+            </div>
+            <div id="cmw-name-suggestions" class="cmw-suggestions">
+              <div class="cmw-suggestions-header">Suggestions:</div>
+              <div class="cmw-suggestions-content"></div>
+            </div>
+
+            <div id="cmw-lab-inputs" class="cmw-value-inputs">
+              <div class="cmw-lab-group">
+                <span class="cmw-lab-label">L*</span>
+                <input id="cmw-lab-l" class="cmw-lab-input" type="number" placeholder="0-100" min="0" max="100" step="0.1">
+              </div>
+              <div class="cmw-lab-group">
+                <span class="cmw-lab-label">a*</span>
+                <input id="cmw-lab-a" class="cmw-lab-input" type="number" placeholder="-128-127" min="-128" max="127" step="0.1">
+              </div>
+              <div class="cmw-lab-group">
+                <span class="cmw-lab-label">b*</span>
+                <input id="cmw-lab-b" class="cmw-lab-input" type="number" placeholder="-128-127" min="-128" max="127" step="0.1">
+              </div>
+            </div>
+
+            <div id="cmw-cmyk-inputs" class="cmw-value-inputs">
+              <div class="cmw-cmyk-group">
+                <span class="cmw-cmyk-label">C</span>
+                <input id="cmw-cmyk-c" class="cmw-cmyk-input" type="number" placeholder="0-100" min="0" max="100" step="0.1">
+              </div>
+              <div class="cmw-cmyk-group">
+                <span class="cmw-cmyk-label">M</span>
+                <input id="cmw-cmyk-m" class="cmw-cmyk-input" type="number" placeholder="0-100" min="0" max="100" step="0.1">
+              </div>
+              <div class="cmw-cmyk-group">
+                <span class="cmw-cmyk-label">Y</span>
+                <input id="cmw-cmyk-y" class="cmw-cmyk-input" type="number" placeholder="0-100" min="0" max="100" step="0.1">
+              </div>
+              <div class="cmw-cmyk-group">
+                <span class="cmw-cmyk-label">K</span>
+                <input id="cmw-cmyk-k" class="cmw-cmyk-input" type="number" placeholder="0-100" min="0" max="100" step="0.1">
+              </div>
+            </div>
+
+            <div id="cmw-rgb-inputs" class="cmw-value-inputs">
+              <div class="cmw-rgb-group">
+                <span class="cmw-rgb-label">R</span>
+                <input id="cmw-rgb-r" class="cmw-rgb-input" type="number" placeholder="0-255" min="0" max="255">
+              </div>
+              <div class="cmw-rgb-group">
+                <span class="cmw-rgb-label">G</span>
+                <input id="cmw-rgb-g" class="cmw-rgb-input" type="number" placeholder="0-255" min="0" max="255">
+              </div>
+              <div class="cmw-rgb-group">
+                <span class="cmw-rgb-label">B</span>
+                <input id="cmw-rgb-b" class="cmw-rgb-input" type="number" placeholder="0-255" min="0" max="255">
+              </div>
+            </div>
+          </div>
+          <button id="cmw-search-btn">Search</button>
+        </div>
+      </div>
+
+      <div id="cmw-loading" class="cmw-loading">
+        <div class="cmw-spinner"></div>
+        <span>Loading color libraries...</span>
+      </div>
+
+      <div id="cmw-status" class="cmw-status"></div>
+
+      <table id="cmw-out" hidden>
+        <thead>
+          <tr>
+            <th>Swatch</th>
+            <th>Name</th>
+            <th>Brand</th>
+            <th>ΔE</th>
+            <th>Lab</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="container">
     <!-- SECTION: ORDERING PROTOCOL -->
     <section class="section" id="protocol">
       <div class="section-grid">
@@ -655,30 +1260,6 @@
             <li>Build stages: print → clean → paint → coat → pack → ship</li>
             <li>Final update: tracking number + finished photos</li>
           </ul>
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION: DOWNLOADS -->
-    <section class="section" id="download">
-      <div class="section-grid">
-        <div>
-          <div class="system-label">DIGITAL VAULT</div>
-          <div class="section-header">
-            <h3>PRINT YOUR OWN MONSTERS</h3>
-          </div>
-          <p class="section-text">
-            Some designs available as digital files for your own printer. Others stay physical only. 
-            Downloads link to Cults3D page plus any free tools or charts.
-          </p>
-        </div>
-
-        <div class="data-card" data-id="[CULTS3D.LINK]">
-          <div class="card-title">ACCESS DIGITAL VAULT</div>
-          <p class="section-text" style="margin-bottom: 1rem;">
-            STL files, experimental parts, things meant for your printer. Separate from physical one-off builds.
-          </p>
-          <button class="btn">OPEN CULTS3D VAULT</button>
         </div>
       </div>
     </section>
@@ -719,9 +1300,9 @@
         BASTARDS OF THE MULTIVERSE /// ONE PERSON TOY LAB /// COLOR MATH BY BOTMCMS /// EST.2024
       </div>
       <div class="footer-links">
-        <a href="#colorlab">COLOR.LAB</a>
-        <a href="#protocol">ORDERING</a>
-        <a href="#download">CULTS3D</a>
+        <a onclick="scrollToSection('colorlab')">COLOR.LAB</a>
+        <a onclick="scrollToSection('colormatch')">COLOR.MATCH</a>
+        <a onclick="scrollToSection('protocol')">ORDERING</a>
       </div>
     </div>
   </footer>
@@ -731,6 +1312,33 @@
   </div>
 
   <script>
+    // Smooth scroll to section
+    function scrollToSection(sectionId) {
+      const section = document.getElementById(sectionId);
+      if (section) {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+
+    // Intersection Observer for section animations
+    const observerOptions = {
+      threshold: 0.1,
+      rootMargin: '0px 0px -100px 0px'
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, observerOptions);
+
+    // Observe all sections
+    document.querySelectorAll('section').forEach(section => {
+      observer.observe(section);
+    });
+
     // Time display
     function updateTime() {
       const now = new Date();
@@ -762,7 +1370,6 @@
     let tilt = 0;
     let targetTilt = 0;
 
-    // Mouse interaction
     canvas.addEventListener('mousedown', (e) => {
       isDragging = true;
       lastMouseX = e.clientX;
@@ -776,7 +1383,6 @@
         rotation += mouseVelocity;
         lastMouseX = e.clientX;
         
-        // Update tilt based on mouse Y position
         const rect = canvas.getBoundingClientRect();
         const mouseY = e.clientY - rect.top;
         targetTilt = ((mouseY / rect.height) - 0.5) * 0.8;
@@ -788,33 +1394,6 @@
     });
 
     canvas.addEventListener('mouseleave', () => {
-      isDragging = false;
-      targetTilt = 0;
-    });
-
-    // Touch interaction
-    canvas.addEventListener('touchstart', (e) => {
-      isDragging = true;
-      lastMouseX = e.touches[0].clientX;
-      mouseVelocity = 0;
-      e.preventDefault();
-    });
-
-    canvas.addEventListener('touchmove', (e) => {
-      if (isDragging) {
-        const deltaX = e.touches[0].clientX - lastMouseX;
-        mouseVelocity = deltaX * 0.01;
-        rotation += mouseVelocity;
-        lastMouseX = e.touches[0].clientX;
-        
-        const rect = canvas.getBoundingClientRect();
-        const touchY = e.touches[0].clientY - rect.top;
-        targetTilt = ((touchY / rect.height) - 0.5) * 0.8;
-        e.preventDefault();
-      }
-    });
-
-    canvas.addEventListener('touchend', () => {
       isDragging = false;
       targetTilt = 0;
     });
@@ -833,16 +1412,13 @@
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, w, h);
 
-      // Smooth tilt transition
       tilt += (targetTilt - tilt) * 0.1;
 
-      // Auto-rotate if not dragging
       if (!isDragging) {
         rotation += rotationSpeed;
         mouseVelocity *= 0.95;
       }
 
-      // Create 3D color wheel with wireframe
       const segments = 24;
       const rings = 8;
 
@@ -853,7 +1429,6 @@
           const angle1 = (i / segments) * Math.PI * 2 + rotation;
           const angle2 = ((i + 1) / segments) * Math.PI * 2 + rotation;
           
-          // 3D rotation effect with tilt
           const z1 = Math.sin(angle1) * 0.5 + 0.5;
           const z2 = Math.sin(angle2) * 0.5 + 0.5;
           
@@ -862,11 +1437,9 @@
           const x2 = cx + Math.cos(angle2) * ringRadius * z2;
           const y2 = cy + (Math.sin(angle2) * ringRadius * 0.6 + tilt * ringRadius) * z2;
 
-          // Color based on angle
           const hue = (i / segments) * 360;
           const lightness = 40 + (r / rings) * 40;
           
-          // Draw line segments
           ctx.strokeStyle = `hsl(${hue}, 100%, ${lightness}%)`;
           ctx.lineWidth = 2;
           ctx.beginPath();
@@ -874,37 +1447,13 @@
           ctx.lineTo(x2, y2);
           ctx.stroke();
 
-          // Draw points at vertices
           ctx.fillStyle = `hsl(${hue}, 100%, ${lightness}%)`;
           ctx.beginPath();
           ctx.arc(x1, y1, 2, 0, Math.PI * 2);
           ctx.fill();
         }
-
-        // Draw radial lines
-        for (let i = 0; i < segments; i += 3) {
-          const angle = (i / segments) * Math.PI * 2 + rotation;
-          const z = Math.sin(angle) * 0.5 + 0.5;
-          
-          const innerRad = r > 0 ? (radius / rings) * r : 0;
-          const outerRad = ringRadius;
-          
-          const x1 = cx + Math.cos(angle) * innerRad * z;
-          const y1 = cy + (Math.sin(angle) * innerRad * 0.6 + tilt * innerRad) * z;
-          const x2 = cx + Math.cos(angle) * outerRad * z;
-          const y2 = cy + (Math.sin(angle) * outerRad * 0.6 + tilt * outerRad) * z;
-
-          const hue = (i / segments) * 360;
-          ctx.strokeStyle = `hsla(${hue}, 100%, 50%, 0.5)`;
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(x1, y1);
-          ctx.lineTo(x2, y2);
-          ctx.stroke();
-        }
       }
 
-      // Center point
       ctx.fillStyle = '#00ff41';
       ctx.shadowBlur = 20;
       ctx.shadowColor = '#00ff41';
@@ -917,6 +1466,113 @@
     }
 
     drawColorWheel();
+
+    // COLOR MATCH WIDGET JAVASCRIPT
+    // [Insert the simplified essential color match JavaScript here]
+    // This is a minimal version - you'll need to add the core functionality
+    
+    const urls = {
+      pantone: '/files/theme/pantone.json',
+      behr: '/files/theme/behr.json',
+      sherwin: '/files/theme/sherwin.json',
+      bm: '/files/theme/gracol2013_gamut_boundary.json'
+    };
+
+    const libs = {};
+    const libNames = {
+      pantone: 'Pantone',
+      behr: 'Behr',
+      sherwin: 'Sherwin Williams',
+      bm: 'Benjamin Moore'
+    };
+
+    // Delta E calculation
+    function dE(L1, a1, b1, L2, a2, b2) {
+      const C1 = Math.hypot(a1, b1), C2 = Math.hypot(a2, b2), C̅ = (C1 + C2) / 2,
+          G = .5 * (1 - Math.sqrt((C̅ ** 7) / ((C̅ ** 7) + (25 ** 7)))),
+          a1p = (1 + G) * a1, a2p = (1 + G) * a2, C1p = Math.hypot(a1p, b1), C2p = Math.hypot(a2p, b2),
+          h1p = Math.atan2(b1, a1p), h2p = Math.atan2(b2, a2p),
+          ΔLp = L2 - L1, ΔCp = C2p - C1p;
+      let Δhp = h2p - h1p; if (Δhp > Math.PI) Δhp -= 2 * Math.PI; if (Δhp < -Math.PI) Δhp += 2 * Math.PI;
+      const ΔHp = 2 * Math.sqrt(C1p * C2p) * Math.sin(Δhp / 2),
+          L̅ = (L1 + L2) / 2, C̅p = (C1p + C2p) / 2;
+      let h̅p = (h1p + h2p) / 2; if (Math.abs(h1p - h2p) > Math.PI) h̅p += Math.PI;
+      const T = 1 - .17 * Math.cos(h̅p - Math.PI / 6) + .24 * Math.cos(2 * h̅p) + .32 * Math.cos(3 * h̅p + Math.PI / 30) - .20 * Math.cos(4 * h̅p - 1.0996),
+          ΔRo = .5236 * Math.exp(-(((h̅p * 57.2958 - 275) / 25) ** 2)),
+          R_C = 2 * Math.sqrt((C̅p ** 7) / ((C̅p ** 7) + (25 ** 7))),
+          S_L = 1 + .015 * ((L̅ - 50) ** 2) / Math.sqrt(20 + (L̅ - 50) ** 2),
+          S_C = 1 + .045 * C̅p,
+          S_H = 1 + .015 * C̅p * T,
+          R_T = -Math.sin(2 * ΔRo) * R_C;
+      return Math.sqrt((ΔLp / S_L) ** 2 + (ΔCp / S_C) ** 2 + (ΔHp / S_H) ** 2 + R_T * (ΔCp / S_C) * (ΔHp / S_H));
+    }
+
+    // Lab to RGB
+    function lab2rgb(L, a, b) {
+      const fy = (L + 16) / 116, fx = a / 500 + fy, fz = fy - b / 200;
+      const XYZ = [fx, fy, fz].map(v => v ** 3 > 0.008856 ? v ** 3 : (v - 16 / 116) / 7.787);
+      XYZ[0] *= .95047; XYZ[2] *= 1.08883;
+      const [r, g, b_] = [
+        XYZ[0] * 3.2406 + XYZ[1] * -1.5372 + XYZ[2] * -0.4986,
+        XYZ[0] * -0.9689 + XYZ[1] * 1.8758 + XYZ[2] * 0.0415,
+        XYZ[0] * 0.0557 + XYZ[1] * -0.2040 + XYZ[2] * 1.0570
+      ].map(v => Math.max(0, Math.min(1, v > 0.0031308 ? 1.055 * v ** (1 / 2.4) - 0.055 : 12.92 * v)));
+      return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b_ * 255)})`;
+    }
+
+    // Load library
+    async function load(id, url) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const colors = await res.json();
+        
+        libs[id] = colors.map(color => ({
+          ...color,
+          library: id,
+          libraryName: libNames[id]
+        }));
+        
+        const countEl = document.getElementById(`count-${id}`);
+        if (countEl) {
+          countEl.textContent = `(${colors.length})`;
+        }
+        
+        console.log(`✔ ${id} loaded (${libs[id].length} colors)`);
+      } catch (e) {
+        console.error(`✖ ${id} failed (${url})`, e);
+        libs[id] = [];
+      }
+    }
+
+    // Initialize
+    let libsLoaded = false;
+    
+    function showLoading(show = true) {
+      const loading = document.getElementById('cmw-loading');
+      loading.classList.toggle('show', show);
+    }
+
+    function showStatus(message, type = 'success') {
+      const status = document.getElementById('cmw-status');
+      status.textContent = message;
+      status.className = `cmw-status ${type} show`;
+      setTimeout(() => status.classList.remove('show'), 5000);
+    }
+
+    // Load libraries
+    showLoading(true);
+    Promise.allSettled(Object.entries(urls).map(([id, u]) => load(id, u)))
+      .then(() => {
+        showLoading(false);
+        libsLoaded = true;
+        const totalColors = Object.values(libs).reduce((sum, lib) => sum + (lib?.length || 0), 0);
+        showStatus(`Color libraries loaded! ${totalColors} colors available.`);
+      })
+      .catch(() => {
+        showLoading(false);
+        showStatus('Failed to load some libraries.', 'error');
+      });
   </script>
 
 </body>
