@@ -4,10 +4,819 @@
   <meta charset="UTF-8" />
   <title>Bastards of the Multiverse</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Custom 3D toys, color tools, and BotMCMS powered color matching for resin, filament, and Bastone spot colors." />
+  <style>
+    :root {
+      --bg: #05060a;
+      --bg-soft: #0b0d14;
+      --bg-card: #11131c;
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --text-main: #f5f5f7;
+      --text-soft: #9ea2b3;
+      --accent: #ff4b8b;
+      --accent-soft: rgba(255, 75, 139, 0.14);
+      --accent-2: #5fe3ff;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --shadow-soft: 0 18px 45px rgba(0, 0, 0, 0.5);
+      --shadow-chip: 0 8px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(circle at top, #101320 0, #05060a 55%, #02030a 100%);
+      color: var(--text-main);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .page {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .shell {
+      width: 100%;
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 1.5rem 1.5rem 3rem;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      background: linear-gradient(to bottom, rgba(5, 6, 10, 0.95), rgba(5, 6, 10, 0.8), transparent);
+    }
+
+    .header-inner {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 0.75rem 1.5rem 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+    }
+
+    .logo-lockup {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .logo-mark {
+      width: 30px;
+      height: 30px;
+      border-radius: 10px;
+      background: radial-gradient(circle at 20% 0, #ffffff 0, #ffb3cc 20%, #ff4b8b 55%, #6f3bff 100%);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 12px 26px rgba(0, 0, 0, 0.65);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .logo-mark::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 0 100%, rgba(0, 0, 0, 0.65), transparent 58%);
+      mix-blend-mode: soft-light;
+    }
+
+    .logo-text-main {
+      font-size: 0.9rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .logo-text-sub {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.24em;
+      color: var(--accent-2);
+      opacity: 0.8;
+    }
+
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      font-size: 0.88rem;
+      color: var(--text-soft);
+    }
+
+    nav a {
+      position: relative;
+      padding-bottom: 0.2rem;
+    }
+
+    nav a::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: -0.15rem;
+      width: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      border-radius: 999px;
+      transition: width 150ms ease-out;
+    }
+
+    nav a:hover::after {
+      width: 100%;
+    }
+
+    .pill-cta {
+      padding: 0.45rem 0.9rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      color: var(--text-main);
+      background: rgba(10, 12, 20, 0.85);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .pill-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 18px rgba(255, 75, 139, 0.9);
+    }
+
+    .hero {
+      padding-top: 1.5rem;
+      padding-bottom: 2.5rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+      gap: 2.5rem;
+      align-items: center;
+    }
+
+    .hero-title-kicker {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.22em;
+      color: var(--accent-2);
+      margin-bottom: 0.75rem;
+    }
+
+    .hero-title {
+      font-size: clamp(2.3rem, 3vw, 2.9rem);
+      line-height: 1.05;
+      letter-spacing: 0.03em;
+      margin: 0;
+    }
+
+    .hero-title span.highlight {
+      color: var(--accent);
+    }
+
+    .hero-body {
+      margin-top: 1rem;
+      color: var(--text-soft);
+      max-width: 30rem;
+      font-size: 0.98rem;
+    }
+
+    .hero-actions {
+      margin-top: 1.7rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.85rem;
+      align-items: center;
+    }
+
+    .btn {
+      border: none;
+      outline: none;
+      padding: 0.85rem 1.4rem;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #ff914d);
+      color: #050308;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .btn-ghost {
+      background: rgba(10, 12, 20, 0.8);
+      color: var(--text-main);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+    }
+
+    .btn span.icon-circle {
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      border: 1px solid rgba(0, 0, 0, 0.4);
+      background: rgba(255, 255, 255, 0.8);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+    }
+
+    .hero-note {
+      margin-top: 1rem;
+      font-size: 0.78rem;
+      color: var(--text-soft);
+      opacity: 0.85;
+    }
+
+    .hero-visual {
+      position: relative;
+    }
+
+    .hero-card {
+      background: radial-gradient(circle at top, #262b47 0, #15182a 50%, #0b0d18 100%);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-soft);
+      padding: 1.2rem 1.2rem 1.3rem;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      color: var(--text-soft);
+      margin-bottom: 0.6rem;
+    }
+
+    .hero-card-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+    }
+
+    .hero-card-avatar-row {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      opacity: 0.8;
+      font-size: 0.75rem;
+    }
+
+    .hero-orbit {
+      margin-top: 0.8rem;
+      border-radius: var(--radius-md);
+      padding: 0.8rem;
+      background: radial-gradient(circle at 0 0, rgba(255, 255, 255, 0.08), transparent 55%);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      position: relative;
+    }
+
+    .hero-orbit-inner {
+      aspect-ratio: 4 / 3;
+      border-radius: 16px;
+      background: radial-gradient(circle at 30% 0, #ffb3cc 0, #ff4b8b 20%, #4f46e5 55%, #050815 100%);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .hero-figure-shadow {
+      position: absolute;
+      inset: 30% 10% 0;
+      background: radial-gradient(circle at 50% 85%, rgba(0, 0, 0, 0.8), transparent 65%);
+      mix-blend-mode: multiply;
+    }
+
+    .hero-figure {
+      width: 58%;
+      height: 72%;
+      border-radius: 30% 45% 30% 55%;
+      background: linear-gradient(145deg, #f7f7ff, #ffe0fb 40%, #ff7ea3 65%, #d142ff);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.9);
+      position: relative;
+    }
+
+    .hero-figure::before,
+    .hero-figure::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      background: radial-gradient(circle at 50% 0, rgba(255, 255, 255, 0.8), transparent 70%);
+      opacity: 0.8;
+    }
+
+    .hero-figure::before {
+      width: 34%;
+      height: 34%;
+      top: 14%;
+      left: 18%;
+    }
+
+    .hero-figure::after {
+      width: 30%;
+      height: 30%;
+      top: 30%;
+      right: 10%;
+    }
+
+    .hero-orbit-ring {
+      position: absolute;
+      inset: 16%;
+      border-radius: 999px;
+      border: 1px dashed rgba(255, 255, 255, 0.16);
+    }
+
+    .hero-chip-row {
+      margin-top: 0.7rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+    }
+
+    .hero-chip {
+      padding: 0.3rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      color: var(--text-soft);
+      background: rgba(7, 10, 24, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      box-shadow: var(--shadow-chip);
+    }
+
+    .chip-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+    }
+
+    .section {
+      margin-top: 2.6rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      gap: 1.8rem;
+      align-items: flex-start;
+    }
+
+    .section.single {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .section-title {
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-soft);
+      margin-bottom: 0.65rem;
+    }
+
+    .section-heading {
+      margin: 0;
+      font-size: 1.35rem;
+      letter-spacing: 0.03em;
+    }
+
+    .section-body {
+      margin-top: 0.7rem;
+      color: var(--text-soft);
+      font-size: 0.92rem;
+      max-width: 30rem;
+    }
+
+    .card {
+      background: linear-gradient(145deg, var(--bg-card), #181b28);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-subtle);
+      padding: 1.1rem 1.2rem;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .card-header {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--accent-2);
+      margin-bottom: 0.4rem;
+    }
+
+    .card-title {
+      font-size: 1.05rem;
+      margin: 0 0 0.45rem;
+    }
+
+    .card-body {
+      font-size: 0.88rem;
+      color: var(--text-soft);
+    }
+
+    .feature-list {
+      margin: 0.7rem 0 0;
+      padding: 0;
+      list-style: none;
+      font-size: 0.86rem;
+      color: var(--text-soft);
+    }
+
+    .feature-list li {
+      display: flex;
+      gap: 0.45rem;
+      align-items: flex-start;
+      margin-bottom: 0.35rem;
+    }
+
+    .feature-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--accent-2);
+      margin-top: 0.35rem;
+    }
+
+    .badge-inline {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.1rem 0.5rem;
+      border-radius: 999px;
+      background: rgba(10, 18, 38, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 0.7rem;
+      color: var(--text-soft);
+    }
+
+    .badge-inline span.pill-dot {
+      width: 7px;
+      height: 7px;
+      box-shadow: none;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.7rem;
+      margin-top: 0.7rem;
+      font-size: 0.82rem;
+    }
+
+    .stat-pill {
+      padding: 0.5rem 0.7rem;
+      border-radius: 0.9rem;
+      background: rgba(7, 9, 18, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .stat-label {
+      font-size: 0.7rem;
+      color: var(--text-soft);
+    }
+
+    .stat-value {
+      font-size: 0.95rem;
+    }
+
+    footer {
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      margin-top: 2.8rem;
+      padding-top: 1.4rem;
+      padding-bottom: 1.2rem;
+      font-size: 0.78rem;
+      color: var(--text-soft);
+    }
+
+    .footer-inner {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.8rem;
+    }
+
+    .footer-links a {
+      opacity: 0.8;
+    }
+
+    .footer-links a:hover {
+      opacity: 1;
+    }
+
+    @media (max-width: 900px) {
+      .hero {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .hero-visual {
+        order: -1;
+      }
+      .section {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    @media (max-width: 640px) {
+      .header-inner {
+        padding-inline: 1rem;
+      }
+      .shell {
+        padding-inline: 1rem;
+      }
+      nav {
+        display: none;
+      }
+      .hero {
+        padding-bottom: 2rem;
+      }
+    }
+  </style>
 </head>
-<body style="background:#05060a;color:#f5f5f7;font-family:system-ui;padding:2rem;">
-  <h1>Bastards of the Multiverse</h1>
-  <p>If you see this on Render, the site is live.</p>
-  <p>API health should be at: <code>/health</code></p>
+<body>
+  <div class="page">
+    <header>
+      <div class="header-inner">
+        <div class="logo-lockup">
+          <div class="logo-mark"></div>
+          <div>
+            <div class="logo-text-main">Bastards of the Multiverse</div>
+            <div class="logo-text-sub">Toys • Color • Tools</div>
+          </div>
+        </div>
+        <nav>
+          <a href="#figures">Figures</a>
+          <a href="#color-lab">Color Lab</a>
+          <a href="#workflow">How Ordering Works</a>
+          <a href="#downloads">Downloads</a>
+          <a href="#contact" class="pill-cta">
+            <span class="pill-dot"></span>
+            DM to order
+          </a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <div class="hero-title-kicker">Custom 3D toys and color tools</div>
+          <h1 class="hero-title">
+            Design your <span class="highlight">bastard</span>,
+            match your color, then DM to build it for real.
+          </h1>
+          <p class="hero-body">
+            Bastards of the Multiverse is a one person toy lab. I sculpt and print multiverse misfits, wire them into
+            BotMCMS, and let you pick every color using real resin, filament, and Bastone spot matches.
+          </p>
+          <div class="hero-actions">
+            <button class="btn btn-primary">
+              <span class="icon-circle">●</span>
+              Start with a figure
+            </button>
+            <button class="btn btn-ghost">
+              Try the Color Lab
+            </button>
+          </div>
+          <p class="hero-note">
+            No cart, no checkout. When you like what you see, you generate a project link and send it to me on Instagram.
+            Every build is handled one on one.
+          </p>
+        </div>
+
+        <div class="hero-visual">
+          <div class="hero-card">
+            <div class="hero-card-header">
+              <div class="hero-card-title">Live preview mock</div>
+              <div class="hero-card-avatar-row">
+                <span class="pill-dot"></span>
+                <span>BotMCMS session</span>
+              </div>
+            </div>
+            <div class="hero-orbit">
+              <div class="hero-orbit-inner">
+                <div class="hero-orbit-ring"></div>
+                <div class="hero-figure-shadow"></div>
+                <div class="hero-figure"></div>
+              </div>
+              <div class="hero-chip-row">
+                <div class="hero-chip">
+                  <span class="chip-swatch" style="background:#FFC845;"></span>
+                  Bastone 123C
+                </div>
+                <div class="hero-chip">
+                  <span class="chip-swatch" style="background:#FFCC4A;"></span>
+                  eSun PLA+ Warm Yellow
+                </div>
+                <div class="hero-chip">
+                  <span class="chip-swatch" style="background:#F8C94D;"></span>
+                  Siraya Tech Fast Yellow
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section single" id="figures">
+        <div>
+          <div class="section-title">What this is</div>
+          <h2 class="section-heading">A toy lab, a color brain, and direct DM ordering.</h2>
+          <p class="section-body">
+            This is not a generic storefront. Bastards of the Multiverse is a focused setup for people who care about
+            aesthetic and color accuracy. You get:
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-header">The three pillars</div>
+          <h3 class="card-title">Figures, BotMCMS, and the Color Lab</h3>
+          <div class="card-body">
+            <ul class="feature-list">
+              <li>
+                <span class="feature-dot"></span>
+                <span><strong>Custom figures</strong> sculpted and printed in house, with modular parts and color zones you can control.</span>
+              </li>
+              <li>
+                <span class="feature-dot"></span>
+                <span><strong>BotMCMS color engine</strong> LittleCMS powered brain that understands Bastone C, resin, filament, hex, RGB, CMYK, and paint chips.</span>
+              </li>
+              <li>
+                <span class="feature-dot"></span>
+                <span><strong>Color Lab</strong> the tool that lets you type any color input and see which actual materials get you closest.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="color-lab">
+        <div>
+          <div class="section-title">Color Lab</div>
+          <h2 class="section-heading">Turn Bastone targets into real resin and filament.</h2>
+          <p class="section-body">
+            The Color Lab is powered by BotMCMS. You can paste a Bastone code, a Pantone style number, a hex value, CMYK, RGB,
+            or even a Behr or Benjamin Moore paint color. The Lab converts it to Lab, locks in a Bastone reference, and then
+            finds the closest resins and filaments with delta E traffic lights.
+          </p>
+          <div class="badge-inline">
+            <span class="pill-dot"></span>
+            <span>Delta E numbers show in green, yellow, or red based on how close the match is.</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">Preview of the Lab</div>
+          <h3 class="card-title">Bastone 123C example</h3>
+          <div class="card-body">
+            <ul class="feature-list">
+              <li>
+                <span class="feature-dot"></span>
+                <span>Input: 123C, PMS 123C, hex, RGB, CMYK, or a paint chip name.</span>
+              </li>
+              <li>
+                <span class="feature-dot"></span>
+                <span>BotMCMS resolves it to <strong>Bastone 123C</strong> as the pure reference color.</span>
+              </li>
+              <li>
+                <span class="feature-dot"></span>
+                <span>Closest materials are pulled from curated resin and filament libraries with optional Amazon links.</span>
+              </li>
+            </ul>
+
+            <div class="grid-2" style="margin-top:0.9rem;">
+              <div class="stat-pill">
+                <div class="stat-label">Resin match</div>
+                <div class="stat-value">Siraya Tech Fast Yellow <span class="material-delta-e delta-e-yellow">Delta E 2.7</span></div>
+              </div>
+              <div class="stat-pill">
+                <div class="stat-label">Filament match</div>
+                <div class="stat-value">eSun PLA+ Warm Yellow <span class="material-delta-e delta-e-green">Delta E 1.3</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="workflow">
+        <div>
+          <div class="section-title">How ordering works</div>
+          <h2 class="section-heading">Build colors online, finish the order in DMs.</h2>
+          <p class="section-body">
+            The site is where you design. Instagram is where you and I talk. No automated cart, no auto charges. Just a clear
+            project link and a human on the other end.
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-header">Project flow</div>
+          <h3 class="card-title">From configuration to shipping</h3>
+          <div class="card-body">
+            <ol class="feature-list" style="list-style: decimal; padding-left: 1.2rem;">
+              <li>You configure your figure, pick colors, and BotMCMS generates a unique project link.</li>
+              <li>You DM that link to me on Instagram so we can confirm price, scope, and lead time.</li>
+              <li>You pay via PayPal. The project page updates with payment received.</li>
+              <li>As I print, clean up, paint, clear coat, pack, and ship, I update milestones on that same link.</li>
+              <li>When it ships, the project page shows your tracking number and final photos of the finished bastard.</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="downloads">
+        <div>
+          <div class="section-title">Downloads</div>
+          <h2 class="section-heading">Want to print your own monsters.</h2>
+          <p class="section-body">
+            Some designs are available as digital files so you can print them on your own setup. Others stay physical only.
+            The Downloads section links out to my Cults3D page and any free tools or charts I decide to share.
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-header">Cults3D</div>
+          <h3 class="card-title">Visit the digital vault</h3>
+          <div class="card-body">
+            <p style="margin:0 0 0.7rem;">
+              Grab STL files, experimental parts, and things that are meant to live on your printer. This is separate from the
+              one off physical bastards I build and ship myself.
+            </p>
+            <button class="btn btn-ghost">
+              Open Cults3D in a new tab
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="section single" id="contact">
+        <div>
+          <div class="section-title">Contact</div>
+          <h2 class="section-heading">DM to start a project or ask a question.</h2>
+          <p class="section-body">
+            If you want a custom build, a color match for a client project, or you just want to nerd out about color and toys,
+            send me a DM on Instagram. Project links from the configurator make it easy to keep everything in one place.
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-header">Primary channel</div>
+          <h3 class="card-title">@your_instagram_handle</h3>
+          <div class="card-body">
+            <p style="margin-top:0; margin-bottom:0.7rem;">
+              DM with a project link or a rough idea of what you want. I will reply with:
+            </p>
+            <ul class="feature-list">
+              <li>
+                <span class="feature-dot"></span>
+                <span>Estimated lead time and price.</span>
+              </li>
+              <li>
+                <span class="feature-dot"></span>
+                <span>Any questions about colors, size, or finish.</span>
+              </li>
+              <li>
+                <span class="feature-dot"></span>
+                <span>PayPal info and how the milestone updates will work for your build.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <div class="footer-inner">
+          <div>
+            Bastards of the Multiverse. One person toy lab. Color math by BotMCMS.
+          </div>
+          <div class="footer-links">
+            <a href="#color-lab">Color Lab</a>
+            <a href="#workflow">Ordering</a>
+            <a href="#downloads">Cults3D</a>
+          </div>
+        </div>
+      </footer>
+    </main>
+  </div>
 </body>
 </html>
