@@ -17,38 +17,73 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Figure out where we are in the container
-# If this file is /app/botmcms/main.py:
-#   APP_DIR  = /app/botmcms
-#   ROOT_DIR = /app
-APP_DIR = Path(__file__).resolve().parent
-ROOT_DIR = APP_DIR.parent
-
-# Where index.html lives (repo root)
-INDEX_PATH = ROOT_DIR / "index.html"
+# --------------------------------------------------------------------
+# PATH SETUP
+# backend/main.py -> backend (parent) -> repo root
+# In the container this should be something like /app/backend/main.py
+# --------------------------------------------------------------------
+BACKEND_DIR = Path(__file__).resolve().parent        # /app/backend
+ROOT_DIR = BACKEND_DIR.parent                        # /app (repo root)
+INDEX_PATH = ROOT_DIR / "index.html"                 # /app/index.html
 
 
 def find_transicc() -> Path | None:
     """
-    Try a few likely locations for the transicc binary.
-    This makes things more robust if the repo layout changes a bit.
+    Try to find the transicc binary in a few obvious spots,
+    then fall back to a recursive search from the repo root.
     """
+
     candidates = [
-        APP_DIR / "icc" / "transicc",              # /app/botmcms/icc/transicc
-        ROOT_DIR / "botmcms" / "icc" / "transicc", # /app/botmcms/icc/transicc (if main.py ended up somewhere else)
-        ROOT_DIR / "icc" / "transicc",             # /app/icc/transicc
+        ROOT_DIR / "botmcms" / "icc" / "transicc",       # expected from your repo layout
+        ROOT_DIR / "botmcms" / "icc" / "transicc.exe",   # in case a .exe slipped in
+        BACKEND_DIR / "icc" / "transicc",
     ]
 
     for p in candidates:
         if p.exists() and p.is_file():
             return p
 
+    # Fallback: search the whole tree for any file starting with "transicc"
+    for p in ROOT_DIR.rglob("transicc*"):
+        if p.is_file():
+            return p
+
     return None
 
 
+# --------------------------------------------------------------------
+# BASIC ROUTES
+# --------------------------------------------------------------------
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/")
+def root():
+    """
+    Serve the main site HTML at /
+    """
+    if INDEX_PATH.exists():
+        return FileResponse(INDEX_PATH)
+    raise HTTPException(status_code=500, detail="index.html not found in container")
+
+
+# --------------------------------------------------------------------
+# LCMS / TRANSICC DEBUG + HEALTH
+# --------------------------------------------------------------------
+@app.get("/lcms/debug")
+def lcms_debug():
+    """
+    Debug endpoint: shows where the app *thinks* the repo root is,
+    and every file it finds whose name starts with 'transicc'.
+    """
+    matches = [str(p) for p in ROOT_DIR.rglob("transicc*")]
+    return {
+        "root_dir": str(ROOT_DIR),
+        "backend_dir": str(BACKEND_DIR),
+        "matches": matches,
+    }
 
 
 @app.get("/lcms/health")
@@ -57,18 +92,13 @@ def lcms_health():
     Sanity check that the LittleCMS transicc binary is present and runnable.
     """
     transicc_path = find_transicc()
-    candidate_paths = [
-        str(APP_DIR / "icc" / "transicc"),
-        str(ROOT_DIR / "botmcms" / "icc" / "transicc"),
-        str(ROOT_DIR / "icc" / "transicc"),
-    ]
 
     if transicc_path is None:
         raise HTTPException(
             status_code=500,
             detail={
                 "error": "transicc binary not found on server",
-                "tried_paths": candidate_paths,
+                "root_dir": str(ROOT_DIR),
             },
         )
 
@@ -105,20 +135,9 @@ def lcms_health():
     }
 
 
-@app.get("/")
-def root():
-    """
-    Serve the main site HTML at /
-    Render copies index.html into /app (ROOT_DIR).
-    """
-    if INDEX_PATH.exists():
-        return FileResponse(INDEX_PATH)
-    raise HTTPException(status_code=500, detail="index.html not found in container")
-
-
-# ------------- Placeholder models and routes for your color API -------------
-
-
+# --------------------------------------------------------------------
+# COLOR MATCH PLACEHOLDER API
+# --------------------------------------------------------------------
 class ColorInput(BaseModel):
     """
     Placeholder input model.
