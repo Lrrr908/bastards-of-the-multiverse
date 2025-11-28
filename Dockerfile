@@ -1,6 +1,11 @@
 # Use a slim Python base image
 FROM python:3.12-slim
 
+# Install system deps needed for transicc (LittleCMS runtime)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      liblcms2-2 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Workdir inside the container
 WORKDIR /app
 
@@ -17,7 +22,7 @@ COPY index.html ./index.html
 # Copy LCMS assets (icc profiles + transicc binary)
 COPY botmcms ./botmcms
 
-# Make sure transicc is executable (won't hurt if it already is)
+# Make sure transicc is executable
 RUN chmod +x /app/botmcms/icc/transicc || true
 
 # Expose the port Render expects
