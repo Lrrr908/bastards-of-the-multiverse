@@ -17,11 +17,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Paths inside the container
-APP_DIR = Path(__file__).resolve().parent          # /app/botmcms
-ROOT_DIR = APP_DIR.parent                          # /app
-INDEX_PATH = ROOT_DIR / "index.html"               # /app/index.html
-TRANSICC_PATH = APP_DIR / "icc" / "transicc"       # /app/botmcms/icc/transicc
+# Figure out where we are in the container
+# If this file is /app/botmcms/main.py:
+#   APP_DIR  = /app/botmcms
+#   ROOT_DIR = /app
+APP_DIR = Path(__file__).resolve().parent
+ROOT_DIR = APP_DIR.parent
+
+# Where index.html lives (repo root)
+INDEX_PATH = ROOT_DIR / "index.html"
+
+
+def find_transicc() -> Path | None:
+    """
+    Try a few likely locations for the transicc binary.
+    This makes things more robust if the repo layout changes a bit.
+    """
+    candidates = [
+        APP_DIR / "icc" / "transicc",              # /app/botmcms/icc/transicc
+        ROOT_DIR / "botmcms" / "icc" / "transicc", # /app/botmcms/icc/transicc (if main.py ended up somewhere else)
+        ROOT_DIR / "icc" / "transicc",             # /app/icc/transicc
+    ]
+
+    for p in candidates:
+        if p.exists() and p.is_file():
+            return p
+
+    return None
 
 
 @app.get("/health")
@@ -32,30 +54,54 @@ def health():
 @app.get("/lcms/health")
 def lcms_health():
     """
-    Simple sanity check that the LittleCMS transicc binary is present
-    and runnable on the server.
+    Sanity check that the LittleCMS transicc binary is present and runnable.
     """
-    if not TRANSICC_PATH.exists():
-        raise HTTPException(status_code=500, detail="transicc binary not found on server")
+    transicc_path = find_transicc()
+    candidate_paths = [
+        str(APP_DIR / "icc" / "transicc"),
+        str(ROOT_DIR / "botmcms" / "icc" / "transicc"),
+        str(ROOT_DIR / "icc" / "transicc"),
+    ]
+
+    if transicc_path is None:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "transicc binary not found on server",
+                "tried_paths": candidate_paths,
+            },
+        )
 
     try:
         result = subprocess.run(
-            [str(TRANSICC_PATH), "-v"],
+            [str(transicc_path), "-v"],
             capture_output=True,
             text=True,
             timeout=5,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to run transicc: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": f"Failed to run transicc: {e}",
+                "path": str(transicc_path),
+            },
+        )
 
     if result.returncode != 0:
         msg = result.stderr.strip() or result.stdout.strip() or "unknown error"
-        raise HTTPException(status_code=500, detail=f"transicc error: {msg}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": f"transicc error: {msg}",
+                "path": str(transicc_path),
+            },
+        )
 
     return {
         "ok": True,
         "version": result.stdout.strip(),
-        "path": str(TRANSICC_PATH),
+        "path": str(transicc_path),
     }
 
 
@@ -63,7 +109,7 @@ def lcms_health():
 def root():
     """
     Serve the main site HTML at /
-    Render copies index.html into /app, which is ROOT_DIR here.
+    Render copies index.html into /app (ROOT_DIR).
     """
     if INDEX_PATH.exists():
         return FileResponse(INDEX_PATH)
