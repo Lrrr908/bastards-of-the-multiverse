@@ -1,5 +1,6 @@
 from pathlib import Path
 import subprocess
+import shutil
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,27 +24,32 @@ app.add_middleware(
 # In the container this should be something like /app/backend/main.py
 # --------------------------------------------------------------------
 BACKEND_DIR = Path(__file__).resolve().parent        # /app/backend
-ROOT_DIR = BACKEND_DIR.parent                        # /app (repo root)
+ROOT_DIR = BACKEND_DIR.parent                        # /app
 INDEX_PATH = ROOT_DIR / "index.html"                 # /app/index.html
 
 
 def find_transicc() -> Path | None:
     """
-    Try to find the transicc binary in a few obvious spots,
-    then fall back to a recursive search from the repo root.
+    Prefer the system-installed transicc (from lcms2-utils).
+    Fall back to any custom binary we find in the repo.
     """
 
+    # 1) Look in PATH (e.g., /usr/bin/transicc)
+    in_path = shutil.which("transicc")
+    if in_path:
+        return Path(in_path)
+
+    # 2) Fallback: look in common repo locations
     candidates = [
-        ROOT_DIR / "botmcms" / "icc" / "transicc",       # expected from your repo layout
-        ROOT_DIR / "botmcms" / "icc" / "transicc.exe",   # in case a .exe slipped in
+        ROOT_DIR / "botmcms" / "icc" / "transicc",
+        ROOT_DIR / "botmcms" / "icc" / "transicc.exe",
         BACKEND_DIR / "icc" / "transicc",
     ]
-
     for p in candidates:
         if p.exists() and p.is_file():
             return p
 
-    # Fallback: search the whole tree for any file starting with "transicc"
+    # 3) Last resort: search everything under /app
     for p in ROOT_DIR.rglob("transicc*"):
         if p.is_file():
             return p
@@ -76,12 +82,15 @@ def root():
 def lcms_debug():
     """
     Debug endpoint: shows where the app *thinks* the repo root is,
-    and every file it finds whose name starts with 'transicc'.
+    what transicc it finds via PATH, and any transicc-like files.
     """
+    path_transicc = shutil.which("transicc")
     matches = [str(p) for p in ROOT_DIR.rglob("transicc*")]
+
     return {
         "root_dir": str(ROOT_DIR),
         "backend_dir": str(BACKEND_DIR),
+        "which_transicc": path_transicc,
         "matches": matches,
     }
 
