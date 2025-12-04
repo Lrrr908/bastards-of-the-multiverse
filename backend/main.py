@@ -308,74 +308,32 @@ def calculate_delta_e(lab1: tuple, lab2: tuple) -> float:
 
 
 # -------------------------------------------------
-# Mock color database
+# Mock color database - DISABLED (using real libraries now)
 # -------------------------------------------------
 
-# This would normally come from a database
-# For now, here's a sample dataset
-COLOR_DATABASE = [
-    {
-        "family": "resin",
-        "brand": "Siraya Tech",
-        "product_line": "Fast",
-        "name": "Fast Yellow",
-        "hex": "#F8C94D",
-        "lab": (84.5, 15.2, 68.3)
-    },
-    {
-        "family": "filament",
-        "brand": "eSun",
-        "product_line": "PLA+",
-        "name": "PLA+ Warm Yellow",
-        "hex": "#FFCC4A",
-        "lab": (85.2, 16.8, 71.5)
-    },
-    {
-        "family": "resin",
-        "brand": "Elegoo",
-        "product_line": "Standard",
-        "name": "Standard Orange",
-        "hex": "#FF8C42",
-        "lab": (71.3, 35.6, 58.2)
-    },
-    {
-        "family": "filament",
-        "brand": "Polymaker",
-        "product_line": "PolyLite",
-        "name": "PolyLite Red",
-        "hex": "#E63946",
-        "lab": (52.8, 62.4, 38.9)
-    },
-    {
-        "family": "resin",
-        "brand": "Anycubic",
-        "product_line": "Standard",
-        "name": "Standard Blue",
-        "hex": "#457B9D",
-        "lab": (51.2, -8.3, -28.4)
-    },
-]
+# Mock database removed - we're using real color libraries from JSON files
+# The /colormatch endpoint now only returns the input color data
+# The frontend will search through the loaded libraries
+
+# COLOR_DATABASE = [
+#     {
+#         "family": "resin",
+#         "brand": "Siraya Tech",
+#         "product_line": "Fast",
+#         "name": "Fast Yellow",
+#         "hex": "#F8C94D",
+#         "lab": (84.5, 15.2, 68.3)
+#     },
+#     ...
+# ]
 
 
 def find_closest_colors(target_lab: tuple, max_results: int = 5) -> List[Dict]:
     """
-    Find the closest colors in the database to the target Lab color.
-    Returns list sorted by Delta E (closest first).
+    This function is now deprecated - color matching happens in the frontend
+    using the loaded libraries. Keeping for backwards compatibility but returns empty.
     """
-    matches = []
-    
-    for color in COLOR_DATABASE:
-        delta_e = calculate_delta_e(target_lab, color["lab"])
-        match = {
-            **color,
-            "delta_e": delta_e
-        }
-        matches.append(match)
-    
-    # Sort by Delta E (ascending)
-    matches.sort(key=lambda x: x["delta_e"])
-    
-    return matches[:max_results]
+    return []
 
 
 # -------------------------------------------------
@@ -461,9 +419,7 @@ def colormatch(payload: ColorInput):
             detail=f"Failed to convert to Lab color space: {str(e)}"
         )
     
-    # Find closest matches
-    matches = find_closest_colors(lab, max_results=5)
-    
+    # Return only the input data - frontend will search libraries
     return {
         "input": {
             "type": payload.input_type,
@@ -472,7 +428,7 @@ def colormatch(payload: ColorInput):
             "rgb": [r, g, b],
             "lab": list(lab),
         },
-        "matches": matches,
+        "matches": []  # Frontend will populate this from libraries
     }
 
 
@@ -492,33 +448,20 @@ def colormatch_get(
 # Color database management endpoints
 # -------------------------------------------------
 
-@app.get("/colors")
-def list_colors():
+@app.get("/libraries/list")
+def list_available_libraries():
     """
-    List all colors in the database.
+    List available color libraries.
     """
     return {
-        "count": len(COLOR_DATABASE),
-        "colors": COLOR_DATABASE
+        "libraries": ["pantone", "behr", "sherwin", "bm"],
+        "description": {
+            "pantone": "Pantone Color System",
+            "behr": "Behr Paint Colors",
+            "sherwin": "Sherwin Williams Paint Colors",
+            "bm": "Benjamin Moore Paint Colors"
+        }
     }
-
-
-@app.get("/colors/brands")
-def list_brands():
-    """
-    List all unique brands in the database.
-    """
-    brands = sorted(set(color["brand"] for color in COLOR_DATABASE))
-    return {"brands": brands}
-
-
-@app.get("/colors/families")
-def list_families():
-    """
-    List all unique families (resin, filament, etc) in the database.
-    """
-    families = sorted(set(color["family"] for color in COLOR_DATABASE))
-    return {"families": families}
 
 
 @app.get("/libraries/{library_name}")
