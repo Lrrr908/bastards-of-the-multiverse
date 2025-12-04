@@ -54,15 +54,30 @@ def root():
 @app.get("/lcms/health")
 def lcms_health():
     """
-    Confirm that color conversion is working.
+    Confirm that color conversion is working and show which method.
     """
     try:
-        # Test a simple conversion
+        # Check if LittleCMS is available
+        try:
+            from PIL import ImageCms
+            method = "LittleCMS (Professional)"
+            has_littlecms = True
+        except ImportError:
+            method = "Pure Python (Fallback)"
+            has_littlecms = False
+        
+        # Test a conversion
         test_lab = rgb_to_lab(255, 200, 69)
+        
+        # Test reverse conversion
+        test_rgb = lab_to_rgb(test_lab[0], test_lab[1], test_lab[2])
+        
         return {
             "ok": True,
-            "method": "python-native",
+            "method": method,
+            "has_littlecms": has_littlecms,
             "test_conversion": f"RGB(255,200,69) -> Lab{test_lab}",
+            "reverse_test": f"Lab{test_lab} -> RGB{test_rgb}",
         }
     except Exception as e:
         raise HTTPException(
@@ -90,8 +105,54 @@ def rgb_to_hex(r: int, g: int, b: int) -> str:
 
 def rgb_to_lab(r: int, g: int, b: int) -> tuple:
     """
-    Convert RGB to L*a*b* using pure Python color conversion.
-    This is accurate and doesn't require external binaries.
+    Convert RGB to L*a*b* using LittleCMS library for professional accuracy.
+    Returns (L, a, b) tuple.
+    """
+    try:
+        from PIL import Image, ImageCms
+        import io
+        
+        # Create an sRGB profile and Lab profile
+        srgb_profile = ImageCms.createProfile("sRGB")
+        lab_profile = ImageCms.createProfile("LAB")
+        
+        # Create transform from sRGB to Lab
+        transform = ImageCms.buildTransform(
+            srgb_profile,
+            lab_profile,
+            "RGB",
+            "LAB"
+        )
+        
+        # Create a 1x1 pixel image with the RGB color
+        img = Image.new("RGB", (1, 1), (r, g, b))
+        
+        # Apply the transform
+        lab_img = ImageCms.applyTransform(img, transform)
+        
+        # Get the Lab values
+        L, a, b_val = lab_img.getpixel((0, 0))
+        
+        # Convert from 0-255 range to proper Lab ranges
+        L = (L / 255.0) * 100
+        a = (a - 128)
+        b_val = (b_val - 128)
+        
+        return (round(L, 2), round(a, 2), round(b_val, 2))
+        
+    except ImportError:
+        # Fallback to pure Python if PIL/littlecms not available
+        return rgb_to_lab_python(r, g, b)
+    except Exception as e:
+        # Fallback on any error
+        print(f"LittleCMS conversion failed: {e}, using fallback")
+        return rgb_to_lab_python(r, g, b)
+
+
+def rgb_to_lab_python(r: int, g: int, b: int) -> tuple:
+    """
+    Fallback pure Python RGB to L*a*b* conversion.
+    Used if LittleCMS is not available.
     Returns (L, a, b) tuple.
     """
     # Normalize RGB to 0-1
@@ -137,6 +198,101 @@ def rgb_to_lab(r: int, g: int, b: int) -> tuple:
     b_val = 200 * (fy - fz)
     
     return (round(L, 2), round(a, 2), round(b_val, 2))
+
+
+def lab_to_rgb(L: float, a: float, b: float) -> tuple:
+    """
+    Convert L*a*b* to RGB (0-255) using LittleCMS for professional accuracy.
+    Returns (r, g, b) tuple.
+    """
+    try:
+        from PIL import Image, ImageCms
+        
+        # Create Lab and sRGB profiles
+        lab_profile = ImageCms.createProfile("LAB")
+        srgb_profile = ImageCms.createProfile("sRGB")
+        
+        # Create transform from Lab to sRGB
+        transform = ImageCms.buildTransform(
+            lab_profile,
+            srgb_profile,
+            "LAB",
+            "RGB"
+        )
+        
+        # Convert Lab values to 0-255 range
+        L_byte = int((L / 100.0) * 255)
+        a_byte = int(a + 128)
+        b_byte = int(b + 128)
+        
+        # Clamp to valid range
+        L_byte = max(0, min(255, L_byte))
+        a_byte = max(0, min(255, a_byte))
+        b_byte = max(0, min(255, b_byte))
+        
+        # Create a 1x1 pixel Lab image
+        lab_img = Image.new("LAB", (1, 1), (L_byte, a_byte, b_byte))
+        
+        # Apply the transform
+        rgb_img = ImageCms.applyTransform(lab_img, transform)
+        
+        # Get the RGB values
+        r, g, b_val = rgb_img.getpixel((0, 0))
+        
+        return (r, g, b_val)
+        
+    except ImportError:
+        # Fallback to pure Python if PIL/littlecms not available
+        return lab_to_rgb_python(L, a, b)
+    except Exception as e:
+        # Fallback on any error
+        print(f"LittleCMS conversion failed: {e}, using fallback")
+        return lab_to_rgb_python(L, a, b)
+
+
+def lab_to_rgb_python(L: float, a: float, b: float) -> tuple:
+    """
+    Convert L*a*b* to RGB (0-255).
+    Returns (r, g, b) tuple.
+    """
+    # Convert Lab to XYZ
+    fy = (L + 16) / 116
+    fx = a / 500 + fy
+    fz = fy - b / 200
+    
+    def f_inv(t):
+        delta = 6/29
+        if t > delta:
+            return t**3
+        else:
+            return 3 * delta**2 * (t - 4/29)
+    
+    x = f_inv(fx) * 0.95047
+    y = f_inv(fy) * 1.00000
+    z = f_inv(fz) * 1.08883
+    
+    # Convert XYZ to linear RGB
+    r_lin = x * 3.2404542 + y * -1.5371385 + z * -0.4985314
+    g_lin = x * -0.9692660 + y * 1.8760108 + z * 0.0415560
+    b_lin = x * 0.0556434 + y * -0.2040259 + z * 1.0572252
+    
+    # Convert linear RGB to sRGB
+    def from_linear(c):
+        if c <= 0.0031308:
+            return 12.92 * c
+        else:
+            return 1.055 * (c ** (1/2.4)) - 0.055
+    
+    r_norm = from_linear(r_lin)
+    g_norm = from_linear(g_lin)
+    b_norm = from_linear(b_lin)
+    
+    # Clamp to 0-255
+    r = max(0, min(255, int(round(r_norm * 255))))
+    g = max(0, min(255, int(round(g_norm * 255))))
+    b = max(0, min(255, int(round(b_norm * 255))))
+    
+    return (r, g, b)
 
 
 def calculate_delta_e(lab1: tuple, lab2: tuple) -> float:
@@ -363,3 +519,79 @@ def list_families():
     """
     families = sorted(set(color["family"] for color in COLOR_DATABASE))
     return {"families": families}
+
+
+@app.get("/libraries/{library_name}")
+def get_library(library_name: str):
+    """
+    Load a color library JSON file and add hex colors from Lab values.
+    Supports: pantone, behr, sherwin, bm (benjamin moore)
+    """
+    import json
+    
+    # Map library names to file paths
+    library_files = {
+        "pantone": ROOT_DIR / "botmcms" / "libraries" / "pantone.json",
+        "behr": ROOT_DIR / "botmcms" / "libraries" / "behr.json",
+        "sherwin": ROOT_DIR / "botmcms" / "libraries" / "sherwin.json",
+        "bm": ROOT_DIR / "botmcms" / "libraries" / "gracol2013_gamut_boundary.json",
+    }
+    
+    if library_name not in library_files:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Library '{library_name}' not found. Available: {list(library_files.keys())}"
+        )
+    
+    file_path = library_files[library_name]
+    
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Library file not found: {file_path}"
+        )
+    
+    try:
+        with open(file_path, 'r') as f:
+            colors = json.load(f)
+        
+        # Process each color: add hex if missing, convert Lab format
+        processed_colors = []
+        for color in colors:
+            # Handle different Lab formats
+            if "lab" in color:
+                lab = color["lab"]
+            elif "L" in color and "a" in color and "b" in color:
+                lab = [color["L"], color["a"], color["b"]]
+            else:
+                continue  # Skip colors without Lab data
+            
+            # Generate hex from Lab if not present
+            if "hex" not in color:
+                r, g, b = lab_to_rgb(lab[0], lab[1], lab[2])
+                hex_color = rgb_to_hex(r, g, b)
+            else:
+                hex_color = color["hex"]
+            
+            processed_colors.append({
+                "name": color.get("name", "Unknown"),
+                "hex": hex_color,
+                "lab": lab
+            })
+        
+        return {
+            "library": library_name,
+            "count": len(processed_colors),
+            "colors": processed_colors
+        }
+        
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to parse JSON file: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error loading library: {str(e)}"
+        )
