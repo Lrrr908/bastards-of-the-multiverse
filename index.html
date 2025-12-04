@@ -1470,6 +1470,56 @@
     // COLOR MATCH WIDGET - BOTM API CONNECTION
     const API_BASE_URL = document.getElementById('cmw-api-url')?.value || 'https://botm-ucxq.onrender.com';
 
+    // Color libraries will be loaded from backend
+    const libs = {};
+    const libNames = {
+      pantone: 'Pantone',
+      behr: 'Behr',
+      sherwin: 'Sherwin Williams',
+      bm: 'Benjamin Moore'
+    };
+
+    // Load library from backend API
+    async function loadLibrary(libraryName) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/libraries/${libraryName}`);
+        if (!response.ok) {
+          console.warn(`Failed to load ${libraryName} library`);
+          return;
+        }
+        
+        const data = await response.json();
+        libs[libraryName] = data.colors;
+        
+        // Update count in UI
+        const countEl = document.getElementById(`count-${libraryName}`);
+        if (countEl) {
+          countEl.textContent = `(${data.count})`;
+        }
+        
+        console.log(`✅ Loaded ${libraryName}: ${data.count} colors`);
+      } catch (error) {
+        console.error(`Failed to load ${libraryName}:`, error);
+      }
+    }
+
+    // Load all libraries on page load
+    async function loadAllLibraries() {
+      showLoading(true);
+      const libraryNames = ['pantone', 'behr', 'sherwin', 'bm'];
+      
+      await Promise.all(libraryNames.map(name => loadLibrary(name)));
+      
+      showLoading(false);
+      const totalColors = Object.values(libs).reduce((sum, lib) => sum + (lib?.length || 0), 0);
+      
+      if (totalColors > 0) {
+        showStatus(`Loaded ${totalColors} colors from ${Object.keys(libs).length} libraries!`, 'success');
+      } else {
+        showStatus('No color libraries loaded. Using backend database only.', 'warning');
+      }
+    }
+
     // Call the backend API
     async function callColorMatchAPI(inputType, value) {
       try {
@@ -1681,6 +1731,9 @@
       
       console.log('🎨 BOTM Color Match Widget initialized');
       console.log('API Base URL:', API_BASE_URL);
+      
+      // Load color libraries from backend
+      loadAllLibraries();
       
       showStatus('Color Match system ready! Try entering a hex color like #FFC845', 'success');
     });
