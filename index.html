@@ -1483,7 +1483,7 @@
     async function loadLibrary(libraryName) {
       try {
         console.log(`Loading ${libraryName} library...`);
-        const response = await fetch(`${API_BASE_URL}/libraries/${libraryName}`);
+        const response = await fetch(`${API_BASE_URL}/botmcms/libraries/${libraryName}`);
         
         console.log(`${libraryName} response status:`, response.status);
         
