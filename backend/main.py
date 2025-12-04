@@ -1,7 +1,4 @@
 from pathlib import Path
-import subprocess
-import shutil
-import tempfile
 import re
 from typing import Optional, List, Dict
 
@@ -51,57 +48,27 @@ def root():
 
 
 # -------------------------------------------------
-# LCMS / transicc helpers
+# LCMS health check
 # -------------------------------------------------
-
-def get_transicc_path() -> Path:
-    """
-    Find the transicc binary inside the container.
-
-    This expects Dockerfile to have installed lcms2-utils,
-    which provides /usr/bin/transicc.
-    """
-    found = shutil.which("transicc")
-    if not found:
-        raise HTTPException(
-            status_code=500,
-            detail="transicc not found on PATH. lcms2-utils is probably not installed in the container.",
-        )
-    return Path(found)
-
 
 @app.get("/lcms/health")
 def lcms_health():
     """
-    Confirm that LittleCMS (transicc) is installed and callable in the container.
+    Confirm that color conversion is working.
     """
-    transicc = get_transicc_path()
-
     try:
-        result = subprocess.run(
-            [str(transicc), "-v"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+        # Test a simple conversion
+        test_lab = rgb_to_lab(255, 200, 69)
+        return {
+            "ok": True,
+            "method": "python-native",
+            "test_conversion": f"RGB(255,200,69) -> Lab{test_lab}",
+        }
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to run transicc: {e}",
+            detail=f"Color conversion failed: {e}",
         )
-
-    if result.returncode != 0:
-        msg = result.stderr.strip() or result.stdout.strip() or "unknown error"
-        raise HTTPException(
-            status_code=500,
-            detail=f"transicc returned error: {msg}",
-        )
-
-    return {
-        "ok": True,
-        "path": str(transicc),
-        "version": result.stdout.strip(),
-    }
 
 
 # -------------------------------------------------
@@ -121,98 +88,53 @@ def rgb_to_hex(r: int, g: int, b: int) -> str:
     return f"#{r:02x}{g:02x}{b:02x}".upper()
 
 
-def parse_lab_from_transicc_output(output: str) -> Optional[tuple]:
-    """
-    Parse L*a*b* values from transicc output.
-    
-    transicc typically outputs something like:
-    [Lab]  L* a* b*
-    85.00 18.00 70.00
-    """
-    lines = output.strip().split('\n')
-    for line in lines:
-        # Look for lines with three numeric values
-        parts = line.strip().split()
-        if len(parts) >= 3:
-            try:
-                l, a, b = float(parts[0]), float(parts[1]), float(parts[2])
-                # Basic sanity check for L*a*b* ranges
-                if 0 <= l <= 100 and -128 <= a <= 127 and -128 <= b <= 127:
-                    return (l, a, b)
-            except (ValueError, IndexError):
-                continue
-    return None
-
-
 def rgb_to_lab(r: int, g: int, b: int) -> tuple:
     """
-    Convert RGB to L*a*b* using LittleCMS transicc.
+    Convert RGB to L*a*b* using pure Python color conversion.
+    This is accurate and doesn't require external binaries.
     Returns (L, a, b) tuple.
-    """
-    transicc = get_transicc_path()
-    
-    # Create temporary input file with RGB values
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-        # transicc expects values in 0-1 range or 0-255 depending on format
-        # We'll use 0-255 range
-        f.write(f"{r} {g} {b}\n")
-        input_file = f.name
-    
-    try:
-        # Run transicc to convert RGB to Lab
-        # -t0 = use sRGB as input
-        # -o lab = output as Lab
-        result = subprocess.run(
-            [
-                str(transicc),
-                "-t0",  # sRGB input
-                "-o", "lab",  # Lab output
-                input_file
-            ],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        
-        if result.returncode != 0:
-            # If transicc fails, use a simple approximation
-            # This is a fallback - not accurate but functional
-            return rgb_to_lab_approximation(r, g, b)
-        
-        # Parse the output
-        lab = parse_lab_from_transicc_output(result.stdout)
-        if lab:
-            return lab
-        else:
-            return rgb_to_lab_approximation(r, g, b)
-            
-    except Exception as e:
-        # Fallback to approximation if subprocess fails
-        return rgb_to_lab_approximation(r, g, b)
-    finally:
-        # Clean up temp file
-        try:
-            Path(input_file).unlink()
-        except:
-            pass
-
-
-def rgb_to_lab_approximation(r: int, g: int, b: int) -> tuple:
-    """
-    Simple RGB to Lab approximation when transicc fails.
-    This is not colorimetrically accurate but provides functional values.
     """
     # Normalize RGB to 0-1
     r_norm = r / 255.0
     g_norm = g / 255.0
     b_norm = b / 255.0
     
-    # Simple luminance calculation
-    L = (0.2126 * r_norm + 0.7152 * g_norm + 0.0722 * b_norm) * 100
+    # Convert RGB to linear RGB
+    def to_linear(c):
+        if c <= 0.04045:
+            return c / 12.92
+        else:
+            return ((c + 0.055) / 1.055) ** 2.4
     
-    # Rough a* (red-green) and b* (yellow-blue) estimates
-    a = (r_norm - g_norm) * 128
-    b_val = (g_norm - b_norm) * 128
+    r_lin = to_linear(r_norm)
+    g_lin = to_linear(g_norm)
+    b_lin = to_linear(b_norm)
+    
+    # Convert linear RGB to XYZ (using sRGB/D65 matrix)
+    x = r_lin * 0.4124564 + g_lin * 0.3575761 + b_lin * 0.1804375
+    y = r_lin * 0.2126729 + g_lin * 0.7151522 + b_lin * 0.0721750
+    z = r_lin * 0.0193339 + g_lin * 0.1191920 + b_lin * 0.9503041
+    
+    # Normalize for D65 white point
+    x = x / 0.95047
+    y = y / 1.00000
+    z = z / 1.08883
+    
+    # Convert XYZ to Lab
+    def f(t):
+        delta = 6/29
+        if t > delta**3:
+            return t**(1/3)
+        else:
+            return t/(3*delta**2) + 4/29
+    
+    fx = f(x)
+    fy = f(y)
+    fz = f(z)
+    
+    L = 116 * fy - 16
+    a = 500 * (fx - fy)
+    b_val = 200 * (fy - fz)
     
     return (round(L, 2), round(a, 2), round(b_val, 2))
 
@@ -315,7 +237,7 @@ class ColorInput(BaseModel):
 @app.post("/colormatch")
 def colormatch(payload: ColorInput):
     """
-    Color matching endpoint using LittleCMS for accurate color conversions.
+    Color matching endpoint using pure Python for accurate color conversions.
     
     Accepts various input types and returns the closest matching colors
     from the database using Delta E calculations in Lab color space.
@@ -374,7 +296,7 @@ def colormatch(payload: ColorInput):
             detail="RGB values must be between 0 and 255"
         )
     
-    # Convert to Lab using LittleCMS
+    # Convert to Lab using pure Python
     try:
         lab = rgb_to_lab(r, g, b)
     except Exception as e:
