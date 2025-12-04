@@ -1679,19 +1679,79 @@
       }
       
       try {
+        showLoading(true);
+        
+        // First, get the input color converted to Lab from backend
         const result = await callColorMatchAPI(inputType, value);
         
         if (result.input?.hex) {
           updateColorPreview(result.input.hex, result.input.lab);
         }
         
-        if (result.matches) {
-          displayResults(result.matches);
+        // Combine backend matches with library matches
+        let allMatches = result.matches || [];
+        
+        // Search through loaded libraries
+        if (result.input?.lab) {
+          const targetLab = result.input.lab;
+          
+          // Check which libraries are enabled
+          const enabledLibraries = [];
+          ['pantone', 'behr', 'sherwin', 'bm'].forEach(lib => {
+            const checkbox = document.getElementById(`toggle-${lib}`);
+            if (checkbox && checkbox.checked && libs[lib]) {
+              enabledLibraries.push(lib);
+            }
+          });
+          
+          // Get results count preference
+          const resultsPerLibrary = parseInt(document.getElementById('cmw-results-count')?.value || '1');
+          
+          // Search each enabled library
+          enabledLibraries.forEach(libraryName => {
+            const colors = libs[libraryName];
+            if (!colors) return;
+            
+            // Calculate Delta E for each color
+            const libraryMatches = colors.map(color => {
+              const deltaE = calculateDeltaE(targetLab, color.lab);
+              return {
+                ...color,
+                library: libNames[libraryName],
+                brand: libNames[libraryName],
+                delta_e: deltaE
+              };
+            });
+            
+            // Sort by Delta E and take top N
+            libraryMatches.sort((a, b) => a.delta_e - b.delta_e);
+            allMatches = allMatches.concat(libraryMatches.slice(0, resultsPerLibrary));
+          });
+          
+          // Sort all matches by Delta E
+          allMatches.sort((a, b) => a.delta_e - b.delta_e);
+        }
+        
+        showLoading(false);
+        
+        if (allMatches.length > 0) {
+          displayResults(allMatches);
+        } else {
+          showStatus('No matches found', 'warning');
         }
         
       } catch (error) {
+        showLoading(false);
         console.error('Search error:', error);
       }
+    }
+    
+    // Calculate Delta E between two Lab colors
+    function calculateDeltaE(lab1, lab2) {
+      const dL = lab2[0] - lab1[0];
+      const da = lab2[1] - lab1[1];
+      const db = lab2[2] - lab1[2];
+      return Math.sqrt(dL * dL + da * da + db * db);
     }
 
     // Handle input type selector change
