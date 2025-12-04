@@ -1,22 +1,28 @@
-FROM python:3.12-slim
+# Use Python 3.11 slim image
+FROM python:3.11-slim
 
-# Install LittleCMS runtime and utilities (gives you transicc)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      liblcms2-2 \
-      lcms2-utils \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set workdir inside the container
+# Set working directory
 WORKDIR /app
 
-# Copy the repo into the container
+# Install system dependencies including LittleCMS tools
+RUN apt-get update && apt-get install -y \
+    lcms2-utils \
+    liblcms2-2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the entire application
 COPY . .
 
-# Install Python dependencies for the backend
-RUN pip install --no-cache-dir -r backend/requirements.txt
+# Create ICC profiles directory
+RUN mkdir -p /app/backend/icc_profiles
 
-# Render will map 10000 from inside container to outside
-EXPOSE 10000
+# Expose port (Render uses PORT env var)
+EXPOSE 8000
 
-# Start FastAPI with uvicorn
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "10000"]
+# Run the application
+# Render.com sets the PORT environment variable
+CMD uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}
