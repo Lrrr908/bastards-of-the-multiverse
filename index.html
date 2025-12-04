@@ -1100,19 +1100,19 @@
         <div class="cmw-toggle-grid">
           <div class="cmw-toggle-item">
             <input type="checkbox" id="toggle-pantone" value="pantone" checked>
-            <label for="toggle-pantone">Pantone <span class="cmw-library-count" id="count-pantone">(0)</span></label>
+            <label for="toggle-pantone">Pantone <span class="cmw-library-count" id="count-pantone">(loading...)</span></label>
           </div>
           <div class="cmw-toggle-item">
             <input type="checkbox" id="toggle-behr" value="behr" checked>
-            <label for="toggle-behr">Behr <span class="cmw-library-count" id="count-behr">(0)</span></label>
+            <label for="toggle-behr">Behr <span class="cmw-library-count" id="count-behr">(loading...)</span></label>
           </div>
           <div class="cmw-toggle-item">
             <input type="checkbox" id="toggle-sherwin" value="sherwin" checked>
-            <label for="toggle-sherwin">Sherwin Williams <span class="cmw-library-count" id="count-sherwin">(0)</span></label>
+            <label for="toggle-sherwin">Sherwin Williams <span class="cmw-library-count" id="count-sherwin">(loading...)</span></label>
           </div>
           <div class="cmw-toggle-item">
             <input type="checkbox" id="toggle-bm" value="bm" checked>
-            <label for="toggle-bm">Benjamin Moore <span class="cmw-library-count" id="count-bm">(0)</span></label>
+            <label for="toggle-bm">Benjamin Moore <span class="cmw-library-count" id="count-bm">(loading...)</span></label>
           </div>
         </div>
         
@@ -1482,19 +1482,30 @@
     // Load library from backend API
     async function loadLibrary(libraryName) {
       try {
+        console.log(`Loading ${libraryName} library...`);
         const response = await fetch(`${API_BASE_URL}/libraries/${libraryName}`);
+        
+        console.log(`${libraryName} response status:`, response.status);
+        
         if (!response.ok) {
-          console.warn(`Failed to load ${libraryName} library`);
+          console.warn(`Failed to load ${libraryName} library - Status: ${response.status}`);
+          const errorText = await response.text();
+          console.warn(`${libraryName} error:`, errorText);
           return;
         }
         
         const data = await response.json();
+        console.log(`${libraryName} data received:`, data);
+        
         libs[libraryName] = data.colors;
         
         // Update count in UI
         const countEl = document.getElementById(`count-${libraryName}`);
         if (countEl) {
           countEl.textContent = `(${data.count})`;
+          console.log(`Updated ${libraryName} count: ${data.count}`);
+        } else {
+          console.warn(`Count element not found for ${libraryName}`);
         }
         
         console.log(`✅ Loaded ${libraryName}: ${data.count} colors`);
@@ -1505,13 +1516,23 @@
 
     // Load all libraries on page load
     async function loadAllLibraries() {
+      console.log('Starting to load all libraries...');
+      console.log('API Base URL:', API_BASE_URL);
+      
       showLoading(true);
       const libraryNames = ['pantone', 'behr', 'sherwin', 'bm'];
+      
+      console.log('Loading libraries:', libraryNames);
       
       await Promise.all(libraryNames.map(name => loadLibrary(name)));
       
       showLoading(false);
+      
+      console.log('Loaded libraries object:', libs);
+      
       const totalColors = Object.values(libs).reduce((sum, lib) => sum + (lib?.length || 0), 0);
+      
+      console.log('Total colors loaded:', totalColors);
       
       if (totalColors > 0) {
         showStatus(`Loaded ${totalColors} colors from ${Object.keys(libs).length} libraries!`, 'success');
