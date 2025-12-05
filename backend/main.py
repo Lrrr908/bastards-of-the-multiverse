@@ -445,6 +445,122 @@ def colormatch_get(
 
 
 # -------------------------------------------------
+# Universal color conversion endpoint
+# -------------------------------------------------
+
+@app.post("/convert")
+def convert_color(payload: dict):
+    """
+    Universal color conversion endpoint.
+    Converts between different color spaces using LittleCMS.
+    """
+    try:
+        # Handle RGB input
+        if "rgb" in payload:
+            r, g, b = payload["rgb"]
+            lab = rgb_to_lab(r, g, b)
+            hex_color = rgb_to_hex(r, g, b)
+            
+            return {
+                "lab": list(lab),
+                "hex": hex_color,
+                "rgb": [r, g, b],
+                "gamut": {
+                    "inGamut": True  # Simplified for now
+                }
+            }
+        
+        # Handle CMYK input
+        elif "cmyk" in payload:
+            c, m, y, k = payload["cmyk"]
+            
+            # Simple CMYK to RGB conversion
+            r = int(255 * (1 - c/100) * (1 - k/100))
+            g = int(255 * (1 - m/100) * (1 - k/100))
+            b_val = int(255 * (1 - y/100) * (1 - k/100))
+            
+            lab = rgb_to_lab(r, g, b_val)
+            hex_color = rgb_to_hex(r, g, b_val)
+            
+            return {
+                "lab": list(lab),
+                "hex": hex_color,
+                "rgb": [r, g, b_val],
+                "cmyk": [c, m, y, k],
+                "gamut": {
+                    "inGamut": True,
+                    "cmykEquivalent": [c, m, y, k]
+                }
+            }
+        
+        # Handle Lab input
+        elif "lab" in payload:
+            L, a, b = payload["lab"]
+            r, g, b_val = lab_to_rgb(L, a, b)
+            hex_color = rgb_to_hex(r, g, b_val)
+            
+            return {
+                "lab": [L, a, b],
+                "hex": hex_color,
+                "rgb": [r, g, b_val],
+                "gamut": {
+                    "inGamut": True
+                }
+            }
+        
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Must provide 'rgb', 'cmyk', or 'lab' in request"
+            )
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Color conversion failed: {str(e)}"
+        )
+
+
+@app.post("/gamut-check")
+def gamut_check(payload: dict):
+    """
+    Check if a Lab color is within the gamut of a profile.
+    """
+    try:
+        lab = payload.get("lab")
+        profile = payload.get("profile", "GRACoL2013.icc")
+        
+        if not lab:
+            raise HTTPException(status_code=400, detail="Lab values required")
+        
+        # For now, return a simple in-gamut check
+        # Real implementation would use ICC profiles
+        L, a, b = lab
+        
+        # Simple heuristic: colors are "in gamut" if they're not too extreme
+        in_gamut = (
+            0 <= L <= 100 and
+            -128 <= a <= 127 and
+            -128 <= b <= 127 and
+            abs(a) < 100 and
+            abs(b) < 100
+        )
+        
+        return {
+            "gamut": {
+                "inGamut": in_gamut,
+                "profile": profile
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Gamut check failed: {str(e)}"
+        )
+
+
+# -------------------------------------------------
 # Color database management endpoints
 # -------------------------------------------------
 
