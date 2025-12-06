@@ -3076,15 +3076,15 @@
       drawColorWheel();
     }
 
-    // COLOR MATCH WIDGET - Library Loading (from working colormatch.txt)
+    // COLOR MATCH WIDGET - Library Loading via API
     const API_BASE_URL = document.getElementById('cmw-api-url')?.value || 'https://botm-ucxq.onrender.com';
 
-    // FIXED: Updated library URLs to point to botmcms/libraries/ directory
+    // Fetch libraries from API endpoints
     const urls = {
-      pantone: '/botmcms/libraries/pantone.json',
-      behr: '/botmcms/libraries/behr.json',
-      sherwin: '/botmcms/libraries/sherwin.json',
-      bm: '/botmcms/libraries/benjaminmoore.json'
+      pantone: `${API_BASE_URL}/libraries/pantone`,
+      behr: `${API_BASE_URL}/libraries/behr`,
+      sherwin: `${API_BASE_URL}/libraries/sherwin`,
+      bm: `${API_BASE_URL}/libraries/benjaminmoore`
     };
 
     const libs = {};
