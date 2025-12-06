@@ -373,6 +373,27 @@ def colormatch(payload: ColorInput):
             r, g, b = [int(x) for x in rgb_parts]
             hex_color = rgb_to_hex(r, g, b)
             
+        elif input_type == "lab":
+            # Handle Lab input: "L,a,b" format
+            lab_parts = re.split(r'[,\s]+', value)
+            if len(lab_parts) != 3:
+                raise ValueError("Lab must have 3 values")
+            L, a, b_val = [float(x) for x in lab_parts]
+            r, g, b = lab_to_rgb(L, a, b_val)
+            hex_color = rgb_to_hex(r, g, b)
+            lab = (L, a, b_val)
+            
+            return {
+                "input": {
+                    "type": payload.input_type,
+                    "value": payload.value,
+                    "hex": hex_color,
+                    "rgb": [r, g, b],
+                    "lab": list(lab),
+                },
+                "matches": []  # Frontend will populate this from libraries
+            }
+            
         elif input_type == "bastone":
             # For Bastone codes, you'd look up in a database
             # For now, return a mock response
@@ -561,7 +582,7 @@ def gamut_check(payload: dict):
 
 
 # -------------------------------------------------
-# Color database management endpoints
+# Color database management endpoints (FIXED)
 # -------------------------------------------------
 
 @app.get("/libraries/list")
@@ -570,12 +591,12 @@ def list_available_libraries():
     List available color libraries.
     """
     return {
-        "libraries": ["pantone", "behr", "sherwin", "bm"],
+        "libraries": ["pantone", "behr", "sherwin", "benjaminmoore"],
         "description": {
             "pantone": "Pantone Color System",
             "behr": "Behr Paint Colors",
             "sherwin": "Sherwin Williams Paint Colors",
-            "bm": "Benjamin Moore Paint Colors"
+            "benjaminmoore": "Benjamin Moore Paint Colors"
         }
     }
 
@@ -584,16 +605,18 @@ def list_available_libraries():
 def get_library(library_name: str):
     """
     Load a color library JSON file and add hex colors from Lab values.
-    Supports: pantone, behr, sherwin, bm (benjamin moore)
+    Supports: pantone, behr, sherwin, benjaminmoore
+    
+    FIXED: Corrected file paths for all libraries.
     """
     import json
     
-    # Map library names to file paths
+    # Map library names to file paths - CORRECTED PATHS
     library_files = {
         "pantone": ROOT_DIR / "botmcms" / "libraries" / "pantone.json",
         "behr": ROOT_DIR / "botmcms" / "libraries" / "behr.json",
         "sherwin": ROOT_DIR / "botmcms" / "libraries" / "sherwin.json",
-        "bm": ROOT_DIR / "botmcms" / "libraries" / "gracol2013_gamut_boundary.json",
+        "benjaminmoore": ROOT_DIR / "botmcms" / "libraries" / "benjaminmoore.json",
     }
     
     if library_name not in library_files:
@@ -607,42 +630,53 @@ def get_library(library_name: str):
     if not file_path.exists():
         raise HTTPException(
             status_code=404,
-            detail=f"Library file not found: {file_path}"
+            detail=f"Library file not found at: {file_path}. Please ensure the file exists."
         )
     
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             colors = json.load(f)
         
         # Process each color: add hex if missing, convert Lab format
         processed_colors = []
         for color in colors:
-            # Handle different Lab formats
-            if "lab" in color:
-                lab = color["lab"]
-            elif "L" in color and "a" in color and "b" in color:
-                lab = [color["L"], color["a"], color["b"]]
-            else:
-                continue  # Skip colors without Lab data
-            
-            # Generate hex from Lab if not present
-            if "hex" not in color:
-                r, g, b = lab_to_rgb(lab[0], lab[1], lab[2])
-                hex_color = rgb_to_hex(r, g, b)
-            else:
-                hex_color = color["hex"]
-            
-            processed_colors.append({
-                "name": color.get("name", "Unknown"),
-                "hex": hex_color,
-                "lab": lab
-            })
+            try:
+                # Handle different Lab formats
+                if "lab" in color:
+                    lab = color["lab"]
+                elif "L" in color and "a" in color and "b" in color:
+                    lab = [color["L"], color["a"], color["b"]]
+                else:
+                    # Skip colors without Lab data
+                    print(f"Warning: Color {color.get('name', 'Unknown')} has no Lab data")
+                    continue
+                
+                # Ensure lab is a list of 3 numbers
+                if not isinstance(lab, (list, tuple)) or len(lab) != 3:
+                    print(f"Warning: Invalid Lab format for {color.get('name', 'Unknown')}")
+                    continue
+                
+                # Generate hex from Lab if not present
+                if "hex" not in color or not color["hex"]:
+                    r, g, b = lab_to_rgb(lab[0], lab[1], lab[2])
+                    hex_color = rgb_to_hex(r, g, b)
+                else:
+                    hex_color = color["hex"]
+                    if not hex_color.startswith('#'):
+                        hex_color = f"#{hex_color}"
+                
+                processed_colors.append({
+                    "name": color.get("name", "Unknown"),
+                    "hex": hex_color,
+                    "lab": lab,
+                    "family": color.get("family", None),
+                    "brand": color.get("brand", None)
+                })
+            except Exception as e:
+                print(f"Error processing color {color.get('name', 'Unknown')}: {e}")
+                continue
         
-        return {
-            "library": library_name,
-            "count": len(processed_colors),
-            "colors": processed_colors
-        }
+        return processed_colors
         
     except json.JSONDecodeError as e:
         raise HTTPException(
@@ -654,3 +688,49 @@ def get_library(library_name: str):
             status_code=500,
             detail=f"Error loading library: {str(e)}"
         )
+
+
+# -------------------------------------------------
+# Convenience endpoint for checking library status
+# -------------------------------------------------
+
+@app.get("/libraries/status")
+def check_library_status():
+    """
+    Check which library files exist and are accessible.
+    Useful for debugging.
+    """
+    import json
+    
+    library_files = {
+        "pantone": ROOT_DIR / "botmcms" / "libraries" / "pantone.json",
+        "behr": ROOT_DIR / "botmcms" / "libraries" / "behr.json",
+        "sherwin": ROOT_DIR / "botmcms" / "libraries" / "sherwin.json",
+        "benjaminmoore": ROOT_DIR / "botmcms" / "libraries" / "benjaminmoore.json",
+    }
+    
+    status = {}
+    for name, path in library_files.items():
+        exists = path.exists()
+        color_count = 0
+        error = None
+        
+        if exists:
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    colors = json.load(f)
+                    color_count = len(colors)
+            except Exception as e:
+                error = str(e)
+        
+        status[name] = {
+            "path": str(path),
+            "exists": exists,
+            "color_count": color_count,
+            "error": error
+        }
+    
+    return {
+        "root_dir": str(ROOT_DIR),
+        "libraries": status
+    }
