@@ -575,12 +575,14 @@
       height: 60px;
       border: 3px solid var(--primary);
       border-radius: 0;
-      background: rgba(0, 0, 0, 0.8);
+      background: transparent;
       transition: all 0.3s ease;
       position: relative;
       display: block;
       flex-shrink: 0;
       box-shadow: 0 0 15px var(--glow);
+      filter: none;
+      opacity: 1;
     }
 
     .cmw-selected-color-info {
@@ -704,12 +706,17 @@
     .cmw-toggle-item {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
       padding: 12px 16px;
       background: rgba(0, 0, 0, 0.5);
       border-radius: 0;
       transition: all 0.2s;
       border: 2px solid transparent;
+    }
+
+    .cmw-toggle-item label {
+      flex: 1;
+      cursor: pointer;
     }
 
     .cmw-toggle-item:hover {
@@ -722,6 +729,32 @@
       height: 18px;
       cursor: pointer;
       accent-color: var(--primary);
+    }
+
+    .cmw-reload-btn {
+      color: var(--primary);
+      cursor: pointer;
+      font-size: 18px;
+      transition: all 0.2s;
+      display: inline;
+      line-height: 1;
+      user-select: none;
+    }
+
+    .cmw-reload-btn:hover {
+      color: var(--accent);
+      transform: scale(1.2);
+    }
+
+    .cmw-reload-btn.disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .cmw-reload-btn.loading {
+      display: inline-block;
+      animation: spin 1s linear infinite;
     }
 
     .cmw-wrap table {
@@ -815,7 +848,7 @@
       }
     }
 
-    /* Additional CMW styles from original */
+    /* Additional CMW styles */
     .cmw-lab-group,
     .cmw-cmyk-group,
     .cmw-rgb-group {
@@ -905,6 +938,9 @@
       height: 30px;
       border: 1px solid var(--primary);
       border-radius: 0;
+      filter: none;
+      opacity: 1;
+      box-shadow: none;
     }
 
     .cmw-suggestions {
@@ -1071,217 +1107,6 @@
       80% { transform: translate(-2px, 2px); }
     }
 
-    /* PILLAR CARDS */
-    .pillar-section {
-      padding: 6rem 0;
-      position: relative;
-    }
-
-    .pillar-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 2rem;
-      margin-top: 3rem;
-    }
-
-    .pillar-card {
-      border: 2px solid var(--primary);
-      background: rgba(0, 255, 65, 0.02);
-      padding: 2rem;
-      position: relative;
-      transition: all 0.3s;
-      overflow: hidden;
-    }
-
-    .pillar-card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(0, 255, 65, 0.1), transparent);
-      transition: all 0.5s;
-    }
-
-    .pillar-card:hover::before {
-      left: 100%;
-    }
-
-    .pillar-card:hover {
-      border-color: var(--accent);
-      box-shadow: 0 0 40px var(--glow);
-      transform: translateY(-5px);
-    }
-
-    .pillar-number {
-      position: absolute;
-      top: 1rem;
-      right: 1rem;
-      font-size: 3rem;
-      font-weight: 900;
-      color: rgba(0, 255, 65, 0.1);
-      line-height: 1;
-    }
-
-    .pillar-icon {
-      width: 60px;
-      height: 60px;
-      border: 2px solid var(--primary);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 1.5rem;
-      background: rgba(0, 0, 0, 0.5);
-      clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-    }
-
-    .pillar-title {
-      font-size: 1.3rem;
-      font-weight: 700;
-      margin-bottom: 1rem;
-      letter-spacing: 0.1em;
-    }
-
-    .pillar-desc {
-      font-size: 0.9rem;
-      line-height: 1.7;
-      color: rgba(0, 255, 65, 0.7);
-      margin-bottom: 1.5rem;
-    }
-
-    .pillar-meta {
-      display: flex;
-      gap: 1rem;
-      flex-wrap: wrap;
-    }
-
-    .meta-tag {
-      font-size: 0.7rem;
-      padding: 0.3rem 0.8rem;
-      border: 1px solid var(--primary);
-      background: rgba(0, 0, 0, 0.5);
-      letter-spacing: 0.1em;
-    }
-
-    /* FIGURE CONFIGURATOR PREVIEW */
-    .configurator-preview {
-      background: rgba(0, 255, 65, 0.02);
-      border-top: 2px solid var(--primary);
-      border-bottom: 2px solid var(--primary);
-      padding: 6rem 0;
-    }
-
-    .config-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 4rem;
-      align-items: center;
-    }
-
-    .config-display {
-      border: 2px solid var(--primary);
-      aspect-ratio: 1;
-      background: rgba(0, 0, 0, 0.8);
-      position: relative;
-      overflow: hidden;
-    }
-
-    .config-placeholder {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 4rem;
-      color: rgba(0, 255, 65, 0.2);
-    }
-
-    .config-controls {
-      display: flex;
-      flex-direction: column;
-      gap: 2rem;
-    }
-
-    .config-option {
-      border: 2px solid var(--primary);
-      padding: 1.5rem;
-      background: rgba(0, 255, 65, 0.03);
-    }
-
-    .config-option-title {
-      font-size: 0.9rem;
-      font-weight: 700;
-      margin-bottom: 1rem;
-      letter-spacing: 0.15em;
-      color: var(--accent);
-    }
-
-    .config-buttons {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    .config-btn {
-      padding: 0.5rem 1rem;
-      border: 1px solid var(--primary);
-      background: rgba(0, 0, 0, 0.8);
-      color: var(--primary);
-      font-family: 'Orbitron', monospace;
-      font-size: 0.75rem;
-      cursor: pointer;
-      transition: all 0.2s;
-      letter-spacing: 0.1em;
-    }
-
-    .config-btn:hover,
-    .config-btn.active {
-      background: var(--primary);
-      color: #000;
-      box-shadow: 0 0 15px var(--glow);
-    }
-
-    /* DATA STREAM */
-    .data-stream {
-      height: 200px;
-      border: 2px solid var(--primary);
-      background: rgba(0, 0, 0, 0.9);
-      padding: 1rem;
-      overflow-y: auto;
-      font-family: 'Courier New', monospace;
-      font-size: 0.75rem;
-      line-height: 1.5;
-      color: rgba(0, 255, 65, 0.6);
-    }
-
-    .data-stream::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    .data-stream::-webkit-scrollbar-track {
-      background: rgba(0, 0, 0, 0.5);
-    }
-
-    .data-stream::-webkit-scrollbar-thumb {
-      background: var(--primary);
-    }
-
-    .stream-line {
-      margin-bottom: 0.3rem;
-      opacity: 0;
-      animation: fadeInLine 0.5s forwards;
-    }
-
-    @keyframes fadeInLine {
-      to { opacity: 1; }
-    }
-
-    .stream-timestamp {
-      color: var(--accent);
-      margin-right: 1rem;
-    }
-
     /* METRIC DASHBOARD */
     .metric-dashboard {
       display: grid;
@@ -1333,70 +1158,7 @@
       margin-top: 0.5rem;
     }
 
-    /* PROCESS TIMELINE */
-    .process-timeline {
-      margin: 4rem 0;
-      position: relative;
-    }
-
-    .timeline-line {
-      position: absolute;
-      left: 30px;
-      top: 0;
-      bottom: 0;
-      width: 2px;
-      background: linear-gradient(180deg, var(--primary), var(--secondary));
-    }
-
-    .timeline-item {
-      display: flex;
-      gap: 2rem;
-      margin-bottom: 3rem;
-      position: relative;
-    }
-
-    .timeline-marker {
-      width: 60px;
-      height: 60px;
-      border: 3px solid var(--primary);
-      background: #000;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      font-weight: 900;
-      flex-shrink: 0;
-      position: relative;
-      z-index: 1;
-      box-shadow: 0 0 20px var(--glow);
-    }
-
-    .timeline-content {
-      flex: 1;
-      padding-top: 0.5rem;
-    }
-
-    .timeline-step {
-      font-size: 0.7rem;
-      color: var(--accent);
-      letter-spacing: 0.2em;
-      margin-bottom: 0.5rem;
-    }
-
-    .timeline-title {
-      font-size: 1.2rem;
-      font-weight: 700;
-      margin-bottom: 0.5rem;
-    }
-
-    .timeline-desc {
-      font-size: 0.9rem;
-      line-height: 1.6;
-      color: rgba(0, 255, 65, 0.7);
-    }
-
-    /* SYSTEM STATUS PANEL */
+    /* STATUS PANEL */
     .status-panel {
       border: 2px solid var(--primary);
       background: rgba(0, 255, 65, 0.02);
@@ -1461,38 +1223,6 @@
       color: var(--accent);
       letter-spacing: 0.15em;
     }
-
-    /* RESPONSIVE UPDATES */
-    @media (max-width: 1024px) {
-      .pillar-grid {
-        grid-template-columns: 1fr;
-        gap: 2rem;
-      }
-
-      .metric-dashboard {
-        grid-template-columns: repeat(2, 1fr);
-      }
-
-      .config-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    @media (max-width: 768px) {
-      .metric-dashboard {
-        grid-template-columns: 1fr;
-      }
-
-      .timeline-marker {
-        width: 50px;
-        height: 50px;
-        font-size: 1rem;
-      }
-
-      .timeline-line {
-        left: 25px;
-      }
-    }
   </style>
 </head>
 <body>
@@ -1511,11 +1241,7 @@
       </div>
       <nav class="nav-links">
         <a onclick="scrollToSection('hero')">HOME</a>
-        <a onclick="scrollToSection('pillars')">SYSTEMS</a>
-        <a onclick="scrollToSection('figures')">FIGURES</a>
-        <a onclick="scrollToSection('colorlab')">COLOR.LAB</a>
         <a onclick="scrollToSection('colormatch')">COLOR.MATCH</a>
-        <a onclick="scrollToSection('protocol')">PROTOCOL</a>
         <a onclick="scrollToSection('contact')">CONTACT</a>
       </nav>
     </div>
@@ -1535,8 +1261,8 @@
             Just pure design-to-DM workflow.
           </p>
           <div class="cta-buttons">
-            <button class="btn" onclick="scrollToSection('configurator')">INITIALIZE FIGURE</button>
-            <button class="btn btn-secondary" onclick="scrollToSection('colormatch')">ACCESS COLOR.MATCH</button>
+            <button class="btn" onclick="scrollToSection('colormatch')">ACCESS COLOR.MATCH</button>
+            <button class="btn btn-secondary" onclick="scrollToSection('contact')">START PROJECT</button>
           </div>
           <div class="system-note">
             >> PROTOCOL: Generate project link → DM on Instagram → Human builds it. <br>
@@ -1599,784 +1325,6 @@
       </div>
     </section>
 
-    <!-- THREE PILLARS -->
-    <section class="pillar-section" id="pillars">
-      <div class="system-label" style="justify-content: center;">THREE CORE SYSTEMS</div>
-      <div class="section-header" style="text-align: center; margin: 2rem 0;">
-        <h3>TOY LAB. COLOR BRAIN. DM ORDERING.</h3>
-      </div>
-      
-      <div class="pillar-grid">
-        <div class="pillar-card">
-          <div class="pillar-number">01</div>
-          <div class="pillar-icon">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-              <path d="M2 17l10 5 10-5"/>
-              <path d="M2 12l10 5 10-5"/>
-            </svg>
-          </div>
-          <div class="pillar-title">CUSTOM FIGURES</div>
-          <div class="pillar-desc">
-            Sculpted and printed in-house. Modular parts system. Full color zone control. 
-            Each figure is a one-off build—not mass production, not generic white label. 
-            You design it, we print it, paint it, finish it.
-          </div>
-          <div class="pillar-meta">
-            <span class="meta-tag">RESIN + FILAMENT</span>
-            <span class="meta-tag">MODULAR PARTS</span>
-            <span class="meta-tag">CUSTOM SCULPT</span>
-          </div>
-        </div>
-
-        <div class="pillar-card">
-          <div class="pillar-number">02</div>
-          <div class="pillar-icon">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M2 12h20"/>
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-            </svg>
-          </div>
-          <div class="pillar-title">BOTMCMS ENGINE</div>
-          <div class="pillar-desc">
-            BotMCMS powered color brain. Understands Bastone C, Pantone, hex, RGB, CMYK, Lab, and paint library codes. 
-            Real delta E calculations. Real material matches. No guesswork—just math and physics.
-          </div>
-          <div class="pillar-meta">
-            <span class="meta-tag">BotMCMS</span>
-            <span class="meta-tag">LAB COLORSPACE</span>
-            <span class="meta-tag">ΔE ACCURACY</span>
-          </div>
-        </div>
-
-        <div class="pillar-card">
-          <div class="pillar-number">03</div>
-          <div class="pillar-icon">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-          </div>
-          <div class="pillar-title">DM ORDERING</div>
-          <div class="pillar-desc">
-            No cart. No checkout. Configure your build on-site, generate a project link, then hand off 
-            to Instagram DM. Pricing, timeline, and scope confirmed human-to-human. PayPal when ready. 
-            Updates throughout build process.
-          </div>
-          <div class="pillar-meta">
-            <span class="meta-tag">INSTAGRAM DM</span>
-            <span class="meta-tag">PROJECT LINKS</span>
-            <span class="meta-tag">DIRECT BUILD</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="quote-box" style="margin-top: 4rem;">
-        "This isn't a storefront. It's a living system where you design a bastard, lock your color science, 
-        and take it into the real world."
-        <div class="quote-author">— BASTARDS//MV PROTOCOL</div>
-      </div>
-    </section>
-
-    <!-- FIGURE CONFIGURATOR PREVIEW -->
-    <section class="configurator-preview" id="configurator">
-      <div class="container">
-        <div class="system-label" style="justify-content: center;">360° FIGURE CUSTOMIZER</div>
-        <div class="section-header" style="text-align: center; margin: 2rem 0;">
-          <h3><span class="glitch" data-text="ROTATE">ROTATE</span>. RECOLOR. REFINE. BUILD.</h3>
-        </div>
-
-        <p class="section-text" style="text-align: center; max-width: 800px; margin: 0 auto 4rem; font-size: 1.05rem;">
-          Design your own Bastard with our cinematic 360° viewer. Every choice updates instantly with real material colors, 
-          preserved lighting, and studio-quality rendering. No generic 3D viewer—this is how configurators should work.
-        </p>
-
-        <div class="config-grid">
-          <div class="config-display">
-            <div class="config-placeholder">
-              <div style="text-align: center;">
-                <div style="font-size: 5rem; margin-bottom: 1rem;">🦖</div>
-                <div style="font-size: 1rem; color: var(--accent); letter-spacing: 0.2em;">360° VIEWER</div>
-                <div style="font-size: 0.8rem; margin-top: 0.5rem; color: rgba(0,255,65,0.6);">LAUNCHING SOON</div>
-              </div>
-            </div>
-            <div style="position: absolute; bottom: 1rem; left: 1rem; right: 1rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.7rem; color: var(--accent); z-index: 10;">
-              <span>DRAG TO ROTATE</span>
-              <span>PINCH TO ZOOM</span>
-            </div>
-          </div>
-
-          <div class="config-controls">
-            <div class="terminal-window" style="margin-bottom: 2rem;">
-              <div class="terminal-header">
-                <div class="terminal-dots">
-                  <div class="terminal-dot"></div>
-                  <div class="terminal-dot"></div>
-                  <div class="terminal-dot"></div>
-                </div>
-                <div class="terminal-title">AVAILABLE.FIGURES</div>
-              </div>
-              <div class="terminal-body">
-                <div><span class="terminal-prompt">></span><span class="terminal-command"> list_figures()</span></div>
-                <div style="margin-top: 0.5rem;">
-                  <div style="color: var(--primary);">1. 1970s Shogun American Godzilla</div>
-                  <div style="margin-left: 1rem; font-size: 0.85rem; color: rgba(0,255,65,0.7);">   - Missile fist action</div>
-                  <div style="margin-left: 1rem; font-size: 0.85rem; color: rgba(0,255,65,0.7);">   - Modular spines</div>
-                  <div style="margin-left: 1rem; font-size: 0.85rem; color: rgba(0,255,65,0.7);">   - 8 color zones</div>
-                  <div style="margin-top: 0.5rem; color: var(--primary);">2. Greatest Monsters Rodan</div>
-                  <div style="margin-left: 1rem; font-size: 0.85rem; color: rgba(0,255,65,0.7);">   - Articulated wings</div>
-                  <div style="margin-left: 1rem; font-size: 0.85rem; color: rgba(0,255,65,0.7);">   - Talon details</div>
-                  <div style="margin-left: 1rem; font-size: 0.85rem; color: rgba(0,255,65,0.7);">   - 7 color zones</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="config-option">
-              <div class="config-option-title">SELECT FIGURE</div>
-              <div class="config-buttons">
-                <button class="config-btn active">GODZILLA '70s</button>
-                <button class="config-btn">RODAN</button>
-              </div>
-            </div>
-
-            <div class="config-option">
-              <div class="config-option-title">COLOR ZONES</div>
-              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem;">
-                <button class="config-btn" style="justify-content: flex-start; padding: 0.6rem 1rem;">
-                  <span style="width: 12px; height: 12px; background: #4A5A4A; border: 1px solid var(--primary); margin-right: 0.5rem; display: inline-block;"></span>
-                  HEAD
-                </button>
-                <button class="config-btn" style="justify-content: flex-start; padding: 0.6rem 1rem;">
-                  <span style="width: 12px; height: 12px; background: #5A6A5A; border: 1px solid var(--primary); margin-right: 0.5rem; display: inline-block;"></span>
-                  TORSO
-                </button>
-                <button class="config-btn" style="justify-content: flex-start; padding: 0.6rem 1rem;">
-                  <span style="width: 12px; height: 12px; background: #FFD700; border: 1px solid var(--primary); margin-right: 0.5rem; display: inline-block;"></span>
-                  SPINES
-                </button>
-                <button class="config-btn" style="justify-content: flex-start; padding: 0.6rem 1rem;">
-                  <span style="width: 12px; height: 12px; background: #8B4513; border: 1px solid var(--primary); margin-right: 0.5rem; display: inline-block;"></span>
-                  CLAWS
-                </button>
-                <button class="config-btn" style="justify-content: flex-start; padding: 0.6rem 1rem;">
-                  <span style="width: 12px; height: 12px; background: #FF4444; border: 1px solid var(--primary); margin-right: 0.5rem; display: inline-block;"></span>
-                  EYES
-                </button>
-                <button class="config-btn" style="justify-content: flex-start; padding: 0.6rem 1rem;">
-                  <span style="width: 12px; height: 12px; background: #666666; border: 1px solid var(--primary); margin-right: 0.5rem; display: inline-block;"></span>
-                  TAIL
-                </button>
-                <button class="config-btn" style="justify-content: flex-start; padding: 0.6rem 1rem;">
-                  <span style="width: 12px; height: 12px; background: #00AAAA; border: 1px solid var(--primary); margin-right: 0.5rem; display: inline-block;"></span>
-                  BELLY
-                </button>
-                <button class="config-btn" style="justify-content: flex-start; padding: 0.6rem 1rem;">
-                  <span style="width: 12px; height: 12px; background: #CCCCCC; border: 1px solid var(--primary); margin-right: 0.5rem; display: inline-block;"></span>
-                  MISSILE FIST
-                </button>
-              </div>
-            </div>
-
-            <div style="display: flex; gap: 1rem; margin-top: 1rem;">
-              <button class="btn" style="flex: 1;">GENERATE PROJECT LINK</button>
-              <button class="btn btn-secondary" onclick="scrollToSection('colormatch')">PICK COLORS</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="system-note" style="margin-top: 3rem; text-align: center;">
-          >> FULL CONFIGURATOR LAUNCHES SOON. Current builds coordinated via DM with concept sketches.
-        </div>
-      </div>
-    </section>
-
-    <!-- HOW THE 360° SYSTEM WORKS -->
-    <section class="section" style="background: rgba(0,255,65,0.02); border-top: 2px solid var(--primary); border-bottom: 2px solid var(--primary); padding: 6rem 0;">
-      <div class="container">
-        <div class="system-label" style="justify-content: center;">TECHNOLOGY DEEP DIVE</div>
-        <div class="section-header" style="text-align: center; margin: 2rem 0 3rem;">
-          <h3>HOW THE 360° CUSTOMIZER WORKS</h3>
-        </div>
-
-        <div class="quote-box">
-          "This isn't a generic 3D viewer. It's a pre-rendered image sequence with masked zone recoloring—giving 
-          you cinematic quality with zero security risk and instant performance."
-          <div class="quote-author">— TECHNICAL ARCHITECTURE</div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; margin-top: 4rem;">
-          <div class="terminal-window">
-            <div class="terminal-header">
-              <div class="terminal-dots">
-                <div class="terminal-dot"></div>
-                <div class="terminal-dot"></div>
-                <div class="terminal-dot"></div>
-              </div>
-              <div class="terminal-title">IMAGE.SEQUENCE</div>
-            </div>
-            <div class="terminal-body">
-              <div><span class="terminal-prompt">></span><span class="terminal-command"> explain_render_tech()</span></div>
-              <div style="margin-top: 0.5rem; color: rgba(0,255,65,0.8);">
-                <div style="margin-bottom: 0.5rem;">Instead of loading a 3D model:</div>
-                <div>• 36 pre-rendered frames per figure</div>
-                <div>• 10-degree rotation increments</div>
-                <div>• Studio lighting baked in Blender</div>
-                <div>• Full texture + shadow detail</div>
-                <div style="margin-top: 0.5rem; color: var(--accent);">
-                  Result: Looks like real 3D without<br>exposing any extractable geometry.
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="terminal-window">
-            <div class="terminal-header">
-              <div class="terminal-dots">
-                <div class="terminal-dot"></div>
-                <div class="terminal-dot"></div>
-                <div class="terminal-dot"></div>
-              </div>
-              <div class="terminal-title">COLOR.ZONES</div>
-            </div>
-            <div class="terminal-body">
-              <div><span class="terminal-prompt">></span><span class="terminal-command"> explain_mask_system()</span></div>
-              <div style="margin-top: 0.5rem; color: rgba(0,255,65,0.8);">
-                <div style="margin-bottom: 0.5rem;">Each frame includes hidden layers:</div>
-                <div>1. Beauty Render (full color)</div>
-                <div>2. Mask Pass (zone IDs)</div>
-                <div style="margin-top: 0.5rem;">
-                  Godzilla head = <span style="color: #ff0000;">RED</span><br>
-                  Torso = <span style="color: #0000ff;">BLUE</span><br>
-                  Spines = <span style="color: #00ff00;">GREEN</span><br>
-                  Missile fist = <span style="color: #ffff00;">YELLOW</span>
-                </div>
-                <div style="margin-top: 0.5rem; color: var(--accent);">
-                  System recolors only matching pixels<br>while preserving lighting + shadows.
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="data-card" data-id="[TECH.STACK]" style="margin-top: 3rem;">
-          <div class="card-title">WHY THIS SYSTEM IS PERFECT</div>
-          <ul class="feature-list">
-            <li><strong>SECURITY:</strong> No one can download or steal your 3D models—only 2D frames leave the server</li>
-            <li><strong>PERFORMANCE:</strong> Instant response across all devices—no WebGL lag, no broken shading</li>
-            <li><strong>ACCURACY:</strong> Real PLA colors from BotMCMS library with Lab measurements</li>
-            <li><strong>QUALITY:</strong> Cinematic lighting and materials baked during render</li>
-            <li><strong>EXPERIENCE:</strong> Behaves exactly like a real 3D configurator—rotate, zoom, inspect</li>
-          </ul>
-        </div>
-
-        <div style="margin-top: 4rem;">
-          <div class="section-header" style="text-align: center; margin-bottom: 2rem;">
-            <h3 style="font-size: 1.8rem;">STEP-BY-STEP WORKFLOW</h3>
-          </div>
-
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem;">
-            <div class="data-card" data-id="[STEP.01]">
-              <div style="font-size: 2rem; color: var(--accent); margin-bottom: 1rem;">01</div>
-              <div class="card-title" style="font-size: 1rem;">CHOOSE YOUR FIGURE</div>
-              <p style="font-size: 0.85rem; line-height: 1.6; color: rgba(0,255,65,0.7); margin-top: 0.5rem;">
-                Select from launch models: Godzilla '70s or Rodan. Each loads with full 360° rotation and studio lighting.
-              </p>
-            </div>
-
-            <div class="data-card" data-id="[STEP.02]">
-              <div style="font-size: 2rem; color: var(--accent); margin-bottom: 1rem;">02</div>
-              <div class="card-title" style="font-size: 1rem;">ROTATE & INSPECT</div>
-              <p style="font-size: 0.85rem; line-height: 1.6; color: rgba(0,255,65,0.7); margin-top: 0.5rem;">
-                Drag to rotate 360°. Zoom with mouse wheel or pinch. Check every angle, texture, and detail.
-              </p>
-            </div>
-
-            <div class="data-card" data-id="[STEP.03]">
-              <div style="font-size: 2rem; color: var(--accent); margin-bottom: 1rem;">03</div>
-              <div class="card-title" style="font-size: 1rem;">SELECT PART</div>
-              <p style="font-size: 0.85rem; line-height: 1.6; color: rgba(0,255,65,0.7); margin-top: 0.5rem;">
-                Click any zone: head, spines, torso, claws, eyes, tail. Selected area highlights in the interface.
-              </p>
-            </div>
-
-            <div class="data-card" data-id="[STEP.04]">
-              <div style="font-size: 2rem; color: var(--accent); margin-bottom: 1rem;">04</div>
-              <div class="card-title" style="font-size: 1rem;">PICK COLOR</div>
-              <p style="font-size: 0.85rem; line-height: 1.6; color: rgba(0,255,65,0.7); margin-top: 0.5rem;">
-                Choose from real PLA library (eSun, Polymaker, etc.) or Bastone color targets. Figure updates instantly.
-              </p>
-            </div>
-
-            <div class="data-card" data-id="[STEP.05]">
-              <div style="font-size: 2rem; color: var(--accent); margin-bottom: 1rem;">05</div>
-              <div class="card-title" style="font-size: 1rem;">REFINE & ADJUST</div>
-              <p style="font-size: 0.85rem; line-height: 1.6; color: rgba(0,255,65,0.7); margin-top: 0.5rem;">
-                Mix and match colors across zones. Preview from every angle. Try different finishes.
-              </p>
-            </div>
-
-            <div class="data-card" data-id="[STEP.06]">
-              <div style="font-size: 2rem; color: var(--accent); margin-bottom: 1rem;">06</div>
-              <div class="card-title" style="font-size: 1rem;">GENERATE LINK</div>
-              <p style="font-size: 0.85rem; line-height: 1.6; color: rgba(0,255,65,0.7); margin-top: 0.5rem;">
-                Create permanent project page with preview, color specs, and unique ID. Send via Instagram DM.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div class="terminal-window" style="margin-top: 4rem;">
-          <div class="terminal-header">
-            <div class="terminal-dots">
-              <div class="terminal-dot"></div>
-              <div class="terminal-dot"></div>
-              <div class="terminal-dot"></div>
-            </div>
-            <div class="terminal-title">PROJECT.LINK.STRUCTURE</div>
-          </div>
-          <div class="terminal-body">
-            <div><span class="terminal-prompt">></span><span class="terminal-command"> show_project_data()</span></div>
-            <div style="margin-top: 0.5rem; font-family: 'Courier New', monospace; color: rgba(0,255,65,0.8);">
-              <div style="color: var(--accent);">Generated Project Link Contains:</div>
-              <div style="margin-left: 1rem; margin-top: 0.5rem;">
-                <div>• Figure type (Godzilla / Rodan)</div>
-                <div>• All selected colors per zone</div>
-                <div>• Material choices (PLA / resin)</div>
-                <div>• Final composite PNG preview</div>
-                <div>• JSON map with exact color codes</div>
-                <div>• Unique project ID</div>
-              </div>
-              <div style="margin-top: 0.5rem; color: var(--accent);">This becomes your build card.</div>
-              <div style="margin-top: 0.5rem;">Link updates through production:</div>
-              <div style="margin-left: 1rem;">
-                <div>→ Queued</div>
-                <div>→ Printing</div>
-                <div>→ Cleanup</div>
-                <div>→ Color application</div>
-                <div>→ Assembly</div>
-                <div>→ Quality check</div>
-                <div>→ Packing & shipping</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- HOW TO CUSTOMIZE YOUR FIGURE -->
-    <section class="section" id="customize-guide">
-      <div class="container">
-        <div class="system-label" style="justify-content: center;">USER GUIDE</div>
-        <div class="section-header" style="text-align: center; margin: 2rem 0;">
-          <h3>HOW TO CUSTOMIZE<br>YOUR FIGURE</h3>
-        </div>
-
-        <p class="section-text" style="text-align: center; max-width: 700px; margin: 0 auto 4rem;">
-          Designing your own Bastard is simple, visual, and completely interactive. Every choice updates instantly 
-          so you see exactly what your final figure will look like—in full 360 degrees.
-        </p>
-
-        <!-- ROTATION & ZOOM -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; margin-bottom: 4rem;">
-          <div class="data-card" data-id="[ROTATE.INSPECT]">
-            <div class="card-title">ROTATE & INSPECT</div>
-            <p class="section-text" style="margin-bottom: 1.5rem;">
-              Drag anywhere on the figure to rotate it a full 360 degrees. The viewer renders real shadows, 
-              highlights, and surface texture so every angle feels like holding the toy in your hand.
-            </p>
-            <div class="terminal-window">
-              <div class="terminal-header">
-                <div class="terminal-dots">
-                  <div class="terminal-dot"></div>
-                  <div class="terminal-dot"></div>
-                  <div class="terminal-dot"></div>
-                </div>
-                <div class="terminal-title">CONTROLS.ROTATE</div>
-              </div>
-              <div class="terminal-body">
-                <div style="color: rgba(0,255,65,0.9);">
-                  <div><strong>Desktop:</strong></div>
-                  <div style="margin-left: 1rem; margin-bottom: 0.5rem;">• Click + drag left/right to rotate</div>
-                  <div><strong>Mobile:</strong></div>
-                  <div style="margin-left: 1rem; margin-bottom: 0.5rem;">• Swipe left/right to spin</div>
-                  <div><strong>Result:</strong></div>
-                  <div style="margin-left: 1rem; color: var(--accent);">Smooth 360° turntable view</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="data-card" data-id="[ZOOM.DETAIL]">
-            <div class="card-title">ZOOM IN / ZOOM OUT</div>
-            <p class="section-text" style="margin-bottom: 1.5rem;">
-              Get closer to inspect texture and finish details, or pull back for the full silhouette. 
-              Zoom always keeps the figure centered so you never lose orientation.
-            </p>
-            <div class="terminal-window">
-              <div class="terminal-header">
-                <div class="terminal-dots">
-                  <div class="terminal-dot"></div>
-                  <div class="terminal-dot"></div>
-                  <div class="terminal-dot"></div>
-                </div>
-                <div class="terminal-title">CONTROLS.ZOOM</div>
-              </div>
-              <div class="terminal-body">
-                <div style="color: rgba(0,255,65,0.9);">
-                  <div><strong>Mouse:</strong></div>
-                  <div style="margin-left: 1rem; margin-bottom: 0.5rem;">• Scroll up = zoom in</div>
-                  <div style="margin-left: 1rem; margin-bottom: 0.5rem;">• Scroll down = zoom out</div>
-                  <div><strong>Touchscreen:</strong></div>
-                  <div style="margin-left: 1rem; margin-bottom: 0.5rem;">• Pinch open = zoom in</div>
-                  <div style="margin-left: 1rem; margin-bottom: 0.5rem;">• Pinch closed = zoom out</div>
-                  <div><strong>Trackpad:</strong></div>
-                  <div style="margin-left: 1rem; color: var(--accent);">• Two-finger slide forward/back</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- PART SELECTION -->
-        <div class="data-card" data-id="[SELECT.PARTS]" style="margin-bottom: 3rem;">
-          <div class="card-title">SELECT A PART TO CUSTOMIZE</div>
-          <p class="section-text" style="margin-bottom: 1.5rem;">
-            Click or tap any area of the figure to activate its color zone. The selected area highlights 
-            in the interface so you always know what you're working on.
-          </p>
-          
-          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 2rem;">
-            <div>
-              <div style="font-size: 0.9rem; font-weight: 700; color: var(--accent); margin-bottom: 1rem; letter-spacing: 0.1em;">GODZILLA ZONES</div>
-              <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                <div style="display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem; border: 1px solid rgba(0,255,65,0.2); background: rgba(0,0,0,0.5);">
-                  <span style="width: 20px; height: 20px; background: #4A5A4A; border: 1px solid var(--primary);"></span>
-                  <span style="font-size: 0.85rem;">HEAD</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem; border: 1px solid rgba(0,255,65,0.2); background: rgba(0,0,0,0.5);">
-                  <span style="width: 20px; height: 20px; background: #5A6A5A; border: 1px solid var(--primary);"></span>
-                  <span style="font-size: 0.85rem;">TORSO</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem; border: 1px solid rgba(0,255,65,0.2); background: rgba(0,0,0,0.5);">
-                  <span style="width: 20px; height: 20px; background: #FFD700; border: 1px solid var(--primary);"></span>
-                  <span style="font-size: 0.85rem;">SPINES (modular)</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem; border: 1px solid rgba(0,255,65,0.2); background: rgba(0,0,0,0.5);">
-                  <span style="width: 20px; height: 20px; background: #8B4513; border: 1px solid var(--primary);"></span>
-                  <span style="font-size: 0.85rem;">CLAWS</span>
-                </div>
-              </div>
-            </div>
-            <div>
-              <div style="font-size: 0.9rem; font-weight: 700; color: var(--accent); margin-bottom: 1rem; letter-spacing: 0.1em;">ADDITIONAL ZONES</div>
-              <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                <div style="display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem; border: 1px solid rgba(0,255,65,0.2); background: rgba(0,0,0,0.5);">
-                  <span style="width: 20px; height: 20px; background: #FF4444; border: 1px solid var(--primary);"></span>
-                  <span style="font-size: 0.85rem;">EYES</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem; border: 1px solid rgba(0,255,65,0.2); background: rgba(0,0,0,0.5);">
-                  <span style="width: 20px; height: 20px; background: #666666; border: 1px solid var(--primary);"></span>
-                  <span style="font-size: 0.85rem;">TAIL</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem; border: 1px solid rgba(0,255,65,0.2); background: rgba(0,0,0,0.5);">
-                  <span style="width: 20px; height: 20px; background: #00AAAA; border: 1px solid var(--primary);"></span>
-                  <span style="font-size: 0.85rem;">BELLY</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem; border: 1px solid rgba(0,255,65,0.2); background: rgba(0,0,0,0.5);">
-                  <span style="width: 20px; height: 20px; background: #CCCCCC; border: 1px solid var(--primary);"></span>
-                  <span style="font-size: 0.85rem;">MISSILE FIST (special element)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="system-note" style="margin-top: 1.5rem;">
-            >> RODAN includes similar zones: head, beak, wings, wing membranes, talons, body, tail, and eyes.
-          </div>
-        </div>
-
-        <!-- COLOR & MATERIAL SELECTION -->
-        <div class="data-card" data-id="[PICK.COLORS]" style="margin-bottom: 3rem;">
-          <div class="card-title">PICK YOUR COLOR & MATERIAL</div>
-          <p class="section-text" style="margin-bottom: 1.5rem;">
-            Every part can be assigned its own color. Choose from real PLA filaments with scanned Lab values, 
-            Bastone color targets for exact matching, or auto-matched material options.
-          </p>
-
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;">
-            <div style="border: 2px solid var(--primary); padding: 1.5rem; background: rgba(0,255,65,0.02);">
-              <div style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--primary);">REAL PLA LIBRARY</div>
-              <p style="font-size: 0.85rem; line-height: 1.6; color: rgba(0,255,65,0.7); margin-bottom: 1rem;">
-                Pulled from BotMCMS PLA Library using scanned Lab values from real filament brands.
-              </p>
-              <div style="font-size: 0.75rem; color: var(--accent);">
-                <div>• eSun PLA+</div>
-                <div>• Polymaker PolyLite</div>
-                <div>• Overture PLA</div>
-                <div>• + more brands</div>
-              </div>
-            </div>
-
-            <div style="border: 2px solid var(--primary); padding: 1.5rem; background: rgba(0,255,65,0.02);">
-              <div style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--primary);">BASTONE TARGETS</div>
-              <p style="font-size: 0.85rem; line-height: 1.6; color: rgba(0,255,65,0.7); margin-bottom: 1rem;">
-                Custom color standards for collectors who want exact matching across resin, paint, and PLA.
-              </p>
-              <div style="font-size: 0.75rem; color: var(--accent);">
-                <div>• Lab-measured references</div>
-                <div>• Consistent across materials</div>
-                <div>• Professional accuracy</div>
-              </div>
-            </div>
-
-            <div style="border: 2px solid var(--primary); padding: 1.5rem; background: rgba(0,255,65,0.02);">
-              <div style="font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: var(--primary);">AUTO-MATCHED</div>
-              <p style="font-size: 0.85rem; line-height: 1.6; color: rgba(0,255,65,0.7); margin-bottom: 1rem;">
-                Pick a Bastone color and the system shows the closest real PLA match.
-              </p>
-              <div style="font-size: 0.75rem; color: var(--accent);">
-                <div>• Delta-E accuracy rating</div>
-                <div>• Multiple alternatives shown</div>
-                <div>• Amazon links included</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="terminal-window" style="margin-top: 2rem;">
-            <div class="terminal-header">
-              <div class="terminal-dots">
-                <div class="terminal-dot"></div>
-                <div class="terminal-dot"></div>
-                <div class="terminal-dot"></div>
-              </div>
-              <div class="terminal-title">COLOR.PREVIEW</div>
-            </div>
-            <div class="terminal-body">
-              <div><span class="terminal-prompt">></span><span class="terminal-command"> apply_color(zone="SPINES", material="eSun_Gold")</span></div>
-              <div style="margin-top: 0.5rem; color: rgba(0,255,65,0.8);">
-                <div>Recoloring spine zone...</div>
-                <div>Preserving shadows + highlights...</div>
-                <div>Applying Lab(82.3, 12.4, 67.8)...</div>
-                <div style="color: var(--primary); margin-top: 0.5rem;">✓ Preview updated in real-time</div>
-                <div style="color: var(--accent);">Your figure instantly reflects the new color</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- FINAL STEPS -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; margin-top: 3rem;">
-          <div class="data-card" data-id="[EXPLORE.REFINE]">
-            <div class="card-title">EXPLORE, ADJUST, PERFECT</div>
-            <ul class="feature-list">
-              <li>Mix and match colors across zones</li>
-              <li>Preview your figure from every angle</li>
-              <li>Try alternate finishes or specialty materials</li>
-              <li>Check color transitions and contrasts</li>
-              <li>Zoom in to inspect surface details</li>
-              <li>There is no wrong answer—every Bastard is unique</li>
-            </ul>
-          </div>
-
-          <div class="data-card" data-id="[GENERATE.LINK]">
-            <div class="card-title">GENERATE PROJECT LINK</div>
-            <p class="section-text" style="margin-bottom: 1rem;">
-              When you're happy with your design, click <strong>GENERATE PROJECT LINK</strong>.
-            </p>
-            <p class="section-text" style="margin-bottom: 1rem;">
-              This creates a permanent page containing:
-            </p>
-            <ul class="feature-list">
-              <li>Full preview of your customized figure</li>
-              <li>Exact color choices for each part</li>
-              <li>Real filament names and material calls</li>
-              <li>Unique project ID for tracking</li>
-            </ul>
-            <div style="margin-top: 1rem; padding: 1rem; background: rgba(0,255,65,0.05); border-left: 3px solid var(--accent);">
-              <div style="font-size: 0.85rem; color: var(--accent); font-weight: 700; margin-bottom: 0.5rem;">THIS IS YOUR DIGITAL BUILD CARD</div>
-              <div style="font-size: 0.8rem; line-height: 1.6; color: rgba(0,255,65,0.7);">
-                Send this link via Instagram DM to begin your build. It becomes your personal dashboard throughout production.
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="quote-box" style="margin-top: 4rem;">
-          "Your figure updates instantly—shadows and highlights preserved—so your custom build feels alive on screen. 
-          This isn't approximation. This is how you see exactly what you're getting."
-          <div class="quote-author">— CONFIGURATOR PHILOSOPHY</div>
-        </div>
-
-        <div style="text-align: center; margin-top: 4rem;">
-          <button class="btn" style="padding: 1.5rem 3rem; font-size: 1.1rem;" onclick="scrollToSection('colormatch')">
-            START WITH COLOR MATCHING
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION: WHAT THIS IS -->
-    <section class="section" id="figures">
-      <div class="section-grid">
-        <div>
-          <div class="system-label">SYSTEM OVERVIEW</div>
-          <div class="section-header">
-            <h3>NOT A STOREFRONT.<br>A CONTROL PANEL.</h3>
-          </div>
-          <p class="section-text">
-            Bastards of the Multiverse is a focused setup for people who care about aesthetic and color accuracy. 
-            Three core systems working together: custom figures, color intelligence, and direct human coordination.
-          </p>
-          <p class="section-text" style="margin-top: 1.5rem;">
-            Every piece is built to order. Every color is scientifically matched. Every project is negotiated 
-            and delivered through direct communication. This is craft work with system-level precision.
-          </p>
-
-          <div class="status-panel" style="margin-top: 2rem;">
-            <div class="status-row">
-              <div class="status-name">BOTMCMS API</div>
-              <div class="status-value">
-                <span class="status-indicator"></span>
-                <span>ONLINE</span>
-              </div>
-            </div>
-            <div class="status-row">
-              <div class="status-name">COLOR LIBRARIES</div>
-              <div class="status-value">
-                <span class="status-indicator"></span>
-                <span>4 BRANDS LOADED</span>
-              </div>
-            </div>
-            <div class="status-row">
-              <div class="status-name">BUILD QUEUE</div>
-              <div class="status-value">
-                <span class="status-indicator warning"></span>
-                <span>3 ACTIVE PROJECTS</span>
-              </div>
-            </div>
-            <div class="status-row">
-              <div class="status-name">DM RESPONSE TIME</div>
-              <div class="status-value">
-                <span class="status-indicator"></span>
-                <span>&lt;24 HRS</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="terminal-window">
-          <div class="terminal-header">
-            <div class="terminal-dots">
-              <div class="terminal-dot"></div>
-              <div class="terminal-dot"></div>
-              <div class="terminal-dot"></div>
-            </div>
-            <div class="terminal-title">SYSTEM.ARCHITECTURE</div>
-          </div>
-          <div class="terminal-body">
-            <div><span class="terminal-prompt">user@bastards:~$</span><span class="terminal-command"> cat pillars.md</span></div>
-            <div style="margin-top: 1rem;">
-              <div style="color: var(--accent);"># THREE PILLARS</div>
-              <div style="margin-top: 0.5rem;">
-                <div>1. CUSTOM FIGURES</div>
-                <div style="margin-left: 1rem; font-size: 0.8rem;">- Sculpted in-house</div>
-                <div style="margin-left: 1rem; font-size: 0.8rem;">- Modular parts system</div>
-                <div style="margin-left: 1rem; font-size: 0.8rem;">- Full color zone control</div>
-              </div>
-              <div style="margin-top: 0.5rem;">
-                <div>2. BOTMCMS ENGINE</div>
-                <div style="margin-left: 1rem; font-size: 0.8rem;">- BotMCMS integration</div>
-                <div style="margin-left: 1rem; font-size: 0.8rem;">- Lab colorspace math</div>
-                <div style="margin-left: 1rem; font-size: 0.8rem;">- Delta E calculations</div>
-              </div>
-              <div style="margin-top: 0.5rem;">
-                <div>3. COLOR.MATCH</div>
-                <div style="margin-left: 1rem; font-size: 0.8rem;">- Multi-format input</div>
-                <div style="margin-left: 1rem; font-size: 0.8rem;">- Real material libraries</div>
-                <div style="margin-left: 1rem; font-size: 0.8rem;">- Amazon links included</div>
-              </div>
-            </div>
-            <div style="margin-top: 1rem;"><span class="terminal-prompt">user@bastards:~$</span><span class="terminal-command"> █</span></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION: COLOR LAB -->
-    <section class="section" id="colorlab">
-      <div class="section-grid">
-        <div>
-          <div class="system-label">COLOR.LAB PROTOCOL</div>
-          <div class="section-header">
-            <h3>DIGITAL INPUT →<br>REAL-WORLD COLOR EXPECTATION</h3>
-          </div>
-          <p class="section-text">
-             Input any color format: Bastone number, Sherwin-Williams, Behr, Benjamin Moore, physical paint swatches, or any hex, RGB, or CMYK value.
-             BotMCMS normalizes every input into CIELAB coordinates, providing a device-independent, colorimetrically accurate target.
-          </p>
-          <p class="section-text" style="margin-top: 1.5rem;">
-            The system then performs a ΔE comparison between that target and the measured Lab values of real filaments and resins.
-            This quantifies how closely each material can reproduce the intended hue, chroma, and lightness before fabrication.
-          </p>
-          <p class="section-text" style="margin-top: 1.5rem;">
-            Because the targets correspond to real, commercially available swatches, you can reference any fan deck to visualize the expected color in physical lighting.
-            BotMCMS supplies the math ΔE results show how each material will deviate from the target in practice.
-          </p>
-        </div>
-
-        <div>
-          <div class="data-card" data-id="[MATCH.EXAMPLE]">
-            <div class="card-title">BASTONE 123C MATCH SEQUENCE</div>
-            <ul class="feature-list">
-              <li><strong>INPUT:</strong> 123C, PMS 123C, #FFC845, RGB(255,200,69), or "Golden Yellow"</li>
-              <li><strong>CONVERSION:</strong> BotMCMS resolves to Lab(82.3, 12.4, 67.8)</li>
-              <li><strong>LOCK:</strong> Bastone 123C established as reference target</li>
-              <li><strong>SEARCH:</strong> 2,847 colors scanned across 4 libraries</li>
-              <li><strong>RESULTS:</strong> Top matches with ΔE &lt; 3.0 + Amazon links</li>
-            </ul>
-            <div class="stats-grid">
-              <div class="stat-box">
-                <div class="stat-label">RESIN MATCH</div>
-                <div class="stat-value" style="color: var(--primary);">ΔE 2.7</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-label">FILAMENT MATCH</div>
-                <div class="stat-value" style="color: var(--primary);">ΔE 1.3</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-label">PAINT MATCH</div>
-                <div class="stat-value" style="color: var(--primary);">ΔE 0.9</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-label">QUALITY</div>
-                <div class="stat-value" style="color: var(--primary);">PRO</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="terminal-window" style="margin-top: 2rem;">
-            <div class="terminal-header">
-              <div class="terminal-dots">
-                <div class="terminal-dot"></div>
-                <div class="terminal-dot"></div>
-                <div class="terminal-dot"></div>
-              </div>
-              <div class="terminal-title">DELTA-E.REFERENCE</div>
-            </div>
-            <div class="terminal-body">
-              <div><span class="terminal-prompt">></span><span class="terminal-command"> explain_delta_e()</span></div>
-              <div style="margin-top: 0.5rem; color: rgba(0,255,65,0.7);">
-                <div>ΔE 1.0  : Not perceptible</div>
-                <div>ΔE 1.0-2.0: Slight difference (expert eye only)</div>
-                <div>ΔE 2.0-4.0: Acceptable for many commercial applications.</div>
-                <div>ΔE 4.0+: Generally outside acceptable industry standards.</div>
-              </div>
-              <div style="margin-top: 0.5rem;"><span class="terminal-prompt">></span> <span style="color: var(--accent);">BOTM targets ΔE &lt; 3.0 for all matches</span></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
   </div>
 
   <!-- COLOR MATCH WIDGET SECTION -->
@@ -2391,18 +1339,22 @@
         <div class="cmw-toggle-grid">
           <div class="cmw-toggle-item">
             <input type="checkbox" id="toggle-pantone" value="pantone" checked>
+            <span class="cmw-reload-btn" data-library="pantone" title="Reload Pantone library">↻</span>
             <label for="toggle-pantone">Pantone <span class="cmw-library-count" id="count-pantone">(loading...)</span></label>
           </div>
           <div class="cmw-toggle-item">
             <input type="checkbox" id="toggle-behr" value="behr" checked>
+            <span class="cmw-reload-btn" data-library="behr" title="Reload Behr library">↻</span>
             <label for="toggle-behr">Behr <span class="cmw-library-count" id="count-behr">(loading...)</span></label>
           </div>
           <div class="cmw-toggle-item">
             <input type="checkbox" id="toggle-sherwin" value="sherwin" checked>
+            <span class="cmw-reload-btn" data-library="sherwin" title="Reload Sherwin Williams library">↻</span>
             <label for="toggle-sherwin">Sherwin Williams <span class="cmw-library-count" id="count-sherwin">(loading...)</span></label>
           </div>
           <div class="cmw-toggle-item">
             <input type="checkbox" id="toggle-bm" value="bm" checked>
+            <span class="cmw-reload-btn" data-library="bm" title="Reload Benjamin Moore library">↻</span>
             <label for="toggle-bm">Benjamin Moore <span class="cmw-library-count" id="count-bm">(loading...)</span></label>
           </div>
         </div>
@@ -2528,128 +1480,6 @@
   </section>
 
   <div class="container">
-    <!-- SECTION: ORDERING PROTOCOL -->
-    <section class="section" id="protocol">
-      <div class="system-label" style="justify-content: center;">ORDER PROTOCOL</div>
-      <div class="section-header" style="text-align: center; margin: 2rem 0;">
-        <h3>DESIGN ONLINE.<br>BUILD HUMAN-TO-HUMAN.</h3>
-      </div>
-      
-      <p class="section-text" style="text-align: center; max-width: 700px; margin: 0 auto 4rem;">
-        No automated cart. No instant checkout. This is craft work that requires conversation. 
-        The site is your design interface—Instagram DM is your build coordinator.
-      </p>
-
-      <div class="process-timeline">
-        <div class="timeline-line"></div>
-        
-        <div class="timeline-item">
-          <div class="timeline-marker">01</div>
-          <div class="timeline-content">
-            <div class="timeline-step">STEP ONE</div>
-            <div class="timeline-title">CONFIGURE & GENERATE</div>
-            <div class="timeline-desc">
-              Use the site configurator to pick your base form, head type, material, and color zones. 
-              When ready, hit "Generate Project Link" to create a unique URL that captures your full build spec.
-            </div>
-          </div>
-        </div>
-
-        <div class="timeline-item">
-          <div class="timeline-marker">02</div>
-          <div class="timeline-content">
-            <div class="timeline-step">STEP TWO</div>
-            <div class="timeline-title">DM PROJECT LINK</div>
-            <div class="timeline-desc">
-              Send the project link to @YOUR_INSTAGRAM_HANDLE on Instagram. Include any additional notes, 
-              reference images, or specific requests. Response typically within 24 hours.
-            </div>
-          </div>
-        </div>
-
-        <div class="timeline-item">
-          <div class="timeline-marker">03</div>
-          <div class="timeline-content">
-            <div class="timeline-step">STEP THREE</div>
-            <div class="timeline-title">SCOPE & QUOTE</div>
-            <div class="timeline-desc">
-              Receive back: estimated price, lead time (typically 2-4 weeks), questions about colors/finish, 
-              and confirmation that the build is feasible. Adjust scope if needed until we're aligned.
-            </div>
-          </div>
-        </div>
-
-        <div class="timeline-item">
-          <div class="timeline-marker">04</div>
-          <div class="timeline-content">
-            <div class="timeline-step">STEP FOUR</div>
-            <div class="timeline-title">PAYMENT & QUEUE</div>
-            <div class="timeline-desc">
-              Pay via PayPal. Project page updates to show "Payment Received" and your build enters the active queue. 
-              You'll get milestone updates as work progresses.
-            </div>
-          </div>
-        </div>
-
-        <div class="timeline-item">
-          <div class="timeline-marker">05</div>
-          <div class="timeline-content">
-            <div class="timeline-step">STEP FIVE</div>
-            <div class="timeline-title">BUILD STAGES</div>
-            <div class="timeline-desc">
-              Print → Clean → Sand → Prime → Paint → Coat → Cure → QC. You'll get photos at key milestones. 
-              Ask questions anytime. Adjustments possible before final coat.
-            </div>
-          </div>
-        </div>
-
-        <div class="timeline-item">
-          <div class="timeline-marker">06</div>
-          <div class="timeline-content">
-            <div class="timeline-step">STEP SIX</div>
-            <div class="timeline-title">PACK & SHIP</div>
-            <div class="timeline-desc">
-              Final photos sent for approval. Packed with care. Tracking number provided. 
-              Project page updates to "Shipped" with estimated delivery date.
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="quote-box">
-        "Site = design interface. Instagram = human coordination. No automated flow means every build gets the 
-        attention it deserves. This is how you make things right."
-        <div class="quote-author">— BUILD PHILOSOPHY</div>
-      </div>
-
-      <div class="terminal-window" style="margin-top: 3rem;">
-        <div class="terminal-header">
-          <div class="terminal-dots">
-            <div class="terminal-dot"></div>
-            <div class="terminal-dot"></div>
-            <div class="terminal-dot"></div>
-          </div>
-          <div class="terminal-title">WORKFLOW.DIAGRAM</div>
-        </div>
-        <div class="terminal-body">
-          <div><span class="terminal-prompt">></span><span class="terminal-command"> visualize_workflow()</span></div>
-          <div style="margin-top: 1rem; font-family: monospace; line-height: 1.8;">
-            <div>SITE CONFIG → PROJECT LINK → INSTAGRAM DM</div>
-            <div>     ↓              ↓              ↓</div>
-            <div>  DESIGN      CAPTURE SPEC    HUMAN CHAT</div>
-            <div>                                  ↓</div>
-            <div>                           SCOPE + QUOTE</div>
-            <div>                                  ↓</div>
-            <div>                              PAYPAL PAY</div>
-            <div>                                  ↓</div>
-            <div>           BUILD QUEUE → MILESTONE UPDATES</div>
-            <div>                                  ↓</div>
-            <div>                       SHIP + TRACKING NUMBER</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <!-- SECTION: CONTACT -->
     <section class="section" id="contact">
       <div class="section-grid">
@@ -2765,9 +1595,8 @@
         BASTARDS OF THE MULTIVERSE /// ONE PERSON TOY LAB /// COLOR MATH BY BOTMCMS /// EST.2024
       </div>
       <div class="footer-links">
-        <a onclick="scrollToSection('colorlab')">COLOR.LAB</a>
         <a onclick="scrollToSection('colormatch')">COLOR.MATCH</a>
-        <a onclick="scrollToSection('protocol')">ORDERING</a>
+        <a onclick="scrollToSection('contact')">CONTACT</a>
       </div>
     </div>
   </footer>
@@ -2942,22 +1771,6 @@
     updateTime();
 
     // ============================================
-    // CONFIGURATOR INTERACTIONS
-    // ============================================
-    document.querySelectorAll('.config-btn').forEach(btn => {
-      btn.addEventListener('click', function() {
-        const parent = this.parentElement;
-        parent.querySelectorAll('.config-btn').forEach(b => b.classList.remove('active'));
-        this.classList.add('active');
-
-        // Update terminal log
-        const option = parent.parentElement.querySelector('.config-option-title').textContent;
-        const value = this.textContent;
-        console.log(`Config updated: ${option} = ${value}`);
-      });
-    });
-
-    // ============================================
     // 3D COLOR WHEEL
     // ============================================
     const canvas = document.getElementById('colorWheel');
@@ -3078,10 +1891,9 @@
       drawColorWheel();
     }
 
-    // COLOR MATCH WIDGET - Library Loading via API
+    // COLOR MATCH WIDGET
     const API_BASE_URL = document.getElementById('cmw-api-url')?.value || 'https://botm-ucxq.onrender.com';
 
-    // Fetch libraries from API endpoints
     const urls = {
       pantone: `${API_BASE_URL}/libraries/pantone`,
       behr: `${API_BASE_URL}/libraries/behr`,
@@ -3098,11 +1910,17 @@
       bm: 'Benjamin Moore'
     };
 
-    // Simple library loader (from working code)
     async function load(id, url) {
       try {
         console.log(`Loading ${id} from ${url}...`);
-        const res = await fetch(url);
+        
+        // Set a timeout for the fetch request
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const colors = await res.json();
         
@@ -3123,15 +1941,17 @@
         libs[id] = [];
         const countEl = document.getElementById(`count-${id}`);
         if (countEl) {
-          countEl.textContent = `(error)`;
+          if (e.name === 'AbortError') {
+            countEl.textContent = `(timeout)`;
+          } else {
+            countEl.textContent = `(error)`;
+          }
         }
       }
     }
 
-    // Variables
     let libsLoaded = false;
 
-    // Call the backend API
     async function callColorMatchAPI(inputType, value) {
       try {
         showLoading(true);
@@ -3158,7 +1978,6 @@
       }
     }
 
-    // UI Helper Functions
     function showLoading(show = true) {
       const loading = document.getElementById('cmw-loading');
       if (loading) loading.classList.toggle('show', show);
@@ -3188,7 +2007,6 @@
       }
     }
 
-    // Display results in table
     function displayResults(results) {
       const table = document.getElementById('cmw-out');
       const tbody = table?.querySelector('tbody');
@@ -3206,23 +2024,16 @@
       results.forEach(match => {
         const row = tbody.insertRow();
         
-        // Swatch
         const swatchCell = row.insertCell();
         const swatch = document.createElement('div');
         swatch.className = 'cmw-swatch';
         swatch.style.backgroundColor = match.hex;
         swatchCell.appendChild(swatch);
         
-        // Name
         row.insertCell().textContent = match.name;
-        
-        // Brand
         row.insertCell().textContent = match.brand || match.family || 'N/A';
-        
-        // Delta E
         row.insertCell().textContent = match.delta_e?.toFixed(2) || 'N/A';
         
-        // Lab
         const labCell = row.insertCell();
         if (match.lab) {
           labCell.textContent = `L*:${match.lab[0].toFixed(1)} a*:${match.lab[1].toFixed(1)} b*:${match.lab[2].toFixed(1)}`;
@@ -3235,7 +2046,6 @@
       showStatus(`Found ${results.length} matches!`);
     }
 
-    // Handle search
     async function handleSearch() {
       const searchType = document.getElementById('cmw-search-type-select')?.value || 'name';
       
@@ -3250,7 +2060,6 @@
         
         value = input.value.trim();
         
-        // Detect if it's a hex code
         if (value.startsWith('#') || /^[0-9A-Fa-f]{6}$/.test(value)) {
           inputType = 'hex';
           value = value.startsWith('#') ? value : `#${value}`;
@@ -3292,21 +2101,17 @@
       try {
         showLoading(true);
         
-        // First, get the input color converted to Lab from backend
         const result = await callColorMatchAPI(inputType, value);
         
         if (result.input?.hex) {
           updateColorPreview(result.input.hex, result.input.lab);
         }
         
-        // Combine backend matches with library matches
         let allMatches = result.matches || [];
         
-        // Search through loaded libraries
         if (result.input?.lab) {
           const targetLab = result.input.lab;
           
-          // Check which libraries are enabled
           const enabledLibraries = [];
           ['pantone', 'behr', 'sherwin', 'bm'].forEach(lib => {
             const checkbox = document.getElementById(`toggle-${lib}`);
@@ -3315,15 +2120,12 @@
             }
           });
           
-          // Get results count preference
           const resultsPerLibrary = parseInt(document.getElementById('cmw-results-count')?.value || '1');
           
-          // Search each enabled library
           enabledLibraries.forEach(libraryName => {
             const colors = libs[libraryName];
             if (!colors) return;
             
-            // Calculate Delta E for each color
             const libraryMatches = colors.map(color => {
               const deltaE = calculateDeltaE(targetLab, color.lab);
               return {
@@ -3334,12 +2136,10 @@
               };
             });
             
-            // Sort by Delta E and take top N
             libraryMatches.sort((a, b) => a.delta_e - b.delta_e);
             allMatches = allMatches.concat(libraryMatches.slice(0, resultsPerLibrary));
           });
           
-          // Sort all matches by Delta E
           allMatches.sort((a, b) => a.delta_e - b.delta_e);
         }
         
@@ -3357,7 +2157,6 @@
       }
     }
     
-    // Calculate Delta E between two Lab colors
     function calculateDeltaE(lab1, lab2) {
       const dL = lab2[0] - lab1[0];
       const da = lab2[1] - lab1[1];
@@ -3365,7 +2164,6 @@
       return Math.sqrt(dL * dL + da * da + db * db);
     }
 
-    // Handle input type selector change
     function handleInputTypeChange() {
       const searchType = document.getElementById('cmw-search-type-select')?.value;
       
@@ -3386,7 +2184,6 @@
       }
     }
 
-    // Initialize (using exact working code from colormatch.txt)
     document.addEventListener('DOMContentLoaded', () => {
       const searchBtn = document.getElementById('cmw-search-btn');
       if (searchBtn) searchBtn.addEventListener('click', handleSearch);
@@ -3400,28 +2197,60 @@
         });
       });
       
+      // Add reload button handlers
+      document.querySelectorAll('.cmw-reload-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
+          const libraryId = this.getAttribute('data-library');
+          const url = urls[libraryId];
+          
+          if (!url) return;
+          
+          // Disable and add loading class
+          this.classList.add('disabled', 'loading');
+          
+          const countEl = document.getElementById(`count-${libraryId}`);
+          if (countEl) countEl.textContent = '(reloading...)';
+          
+          // Reload the library
+          await load(libraryId, url);
+          
+          // Re-enable and remove loading class
+          this.classList.remove('disabled', 'loading');
+          
+          // Show feedback
+          if (libs[libraryId] && libs[libraryId].length > 0) {
+            showStatus(`${libNames[libraryId]} reloaded successfully! ${libs[libraryId].length} colors.`, 'success');
+          } else {
+            showStatus(`Failed to reload ${libNames[libraryId]}.`, 'error');
+          }
+        });
+      });
+      
       console.log('🎨 BOTM Color Match Widget initialized');
       console.log('API Base URL:', API_BASE_URL);
       
-      // Load libraries using the working method from colormatch.txt
-      showLoading(true);
+      // Show initial loading message
+      showStatus('Loading color libraries... This may take a moment.', 'warning');
       
+      // Load libraries with individual timeout handling
       Promise.allSettled(Object.entries(urls).map(([id, u]) => load(id, u)))
         .then(() => {
-          showLoading(false);
           libsLoaded = true;
           const totalColors = Object.values(libs).reduce((sum, lib) => sum + (lib?.length || 0), 0);
+          
           if (totalColors > 0) {
-            showStatus(`Color libraries loaded successfully! ${totalColors} colors available.`, 'success');
+            showStatus(`${totalColors} colors loaded and ready to search!`, 'success');
           } else {
-            showStatus('Warning: No color libraries loaded. Check console for errors.', 'warning');
+            showStatus('Libraries failed to load. You can still search by hex/RGB/Lab values.', 'warning');
           }
+          
           console.log('All library fetches completed');
-          console.log('Libraries loaded:', libs);
+          console.log('Libraries loaded:', Object.keys(libs).map(k => `${k}: ${libs[k]?.length || 0}`));
         })
-        .catch(() => {
-          showLoading(false);
-          showStatus('Failed to load some color libraries. Functionality may be limited.', 'warning');
+        .catch((error) => {
+          libsLoaded = true; // Still mark as "loaded" so search can proceed
+          console.error('Library loading error:', error);
+          showStatus('Some libraries failed to load. Search still available.', 'warning');
         });
     });
   </script>
