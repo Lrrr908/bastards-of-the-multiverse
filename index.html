@@ -2311,13 +2311,16 @@
             <h3>BASTONE TARGETS →<br>REAL MATERIALS</h3>
           </div>
           <p class="section-text">
-            Input any color format: Bastone code, Pantone number, hex, CMYK, RGB, Lab values, or paint brand names. 
-            The lab converts everything to Lab colorspace, locks the Bastone reference, and returns closest resin and 
-            filament matches with professional delta E accuracy ratings.
+             Input any color format: Bastone number, Sherwin-Williams, Behr, Benjamin Moore, physical paint swatches, or any hex, RGB, or CMYK value.
+             BotMCMS normalizes every input into CIELAB coordinates, providing a device-independent, colorimetrically accurate target.
           </p>
           <p class="section-text" style="margin-top: 1.5rem;">
-            This isn't approximation—it's color science. LittleCMS under the hood. Traffic light system for match quality. 
-            Direct Amazon links for materials. Everything you need to match your vision to physical reality.
+            The system then performs a ΔE comparison between that target and the measured Lab values of real filaments and resins.
+            This quantifies how closely each material can reproduce the intended hue, chroma, and lightness before fabrication.
+          </p>
+          <p class="section-text" style="margin-top: 1.5rem;">
+            Because the targets correspond to real, commercially available swatches, you can reference any fan deck to visualize the expected color in physical lighting.
+            BotMCMS supplies the math ΔE results show how each material will deviate from the target in practice.
           </p>
         </div>
 
