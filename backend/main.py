@@ -582,6 +582,132 @@ def gamut_check(payload: dict):
 
 
 # -------------------------------------------------
+# Rendering comparison endpoints
+# -------------------------------------------------
+
+class RenderComparisonInput(BaseModel):
+    """
+    Input model for render comparison.
+    """
+    source_profile: str = "sRGB"  # Source color profile
+    target_profile: str = "GRACoL2013.icc"  # Target rendering profile
+    colors: List[Dict]  # List of colors to compare, each with rgb or lab
+    intent: str = "perceptual"  # Rendering intent: perceptual, relative, saturation, absolute
+
+
+@app.post("/render-comparison")
+def render_comparison(payload: RenderComparisonInput):
+    """
+    Compare how colors will render across different profiles.
+    
+    Takes a list of colors and shows how they would appear when converted
+    between different color profiles (e.g., sRGB screen vs. CMYK print).
+    
+    Returns the original color and the rendered version with Delta E calculations.
+    """
+    try:
+        results = []
+        
+        for color_input in payload.colors:
+            # Get source color
+            if "rgb" in color_input:
+                r, g, b = color_input["rgb"]
+                source_lab = rgb_to_lab(r, g, b)
+                source_hex = rgb_to_hex(r, g, b)
+            elif "lab" in color_input:
+                L, a, b_val = color_input["lab"]
+                source_lab = (L, a, b_val)
+                r, g, b = lab_to_rgb(L, a, b_val)
+                source_hex = rgb_to_hex(r, g, b)
+            else:
+                continue
+            
+            # For now, simulate rendering by applying a simple transformation
+            # In a full implementation, this would use ICC profiles
+            if payload.target_profile.lower() in ["gracol2013.icc", "cmyk", "print"]:
+                # Simulate CMYK gamut compression
+                # Colors tend to get slightly duller in print
+                rendered_lab = (
+                    source_lab[0] * 0.95,  # Slightly reduce lightness
+                    source_lab[1] * 0.90,  # Compress a* slightly
+                    source_lab[2] * 0.90   # Compress b* slightly
+                )
+            else:
+                # No transformation for same profile
+                rendered_lab = source_lab
+            
+            # Convert rendered Lab back to RGB
+            rendered_rgb = lab_to_rgb(rendered_lab[0], rendered_lab[1], rendered_lab[2])
+            rendered_hex = rgb_to_hex(*rendered_rgb)
+            
+            # Calculate Delta E
+            delta_e = calculate_delta_e(source_lab, rendered_lab)
+            
+            result = {
+                "name": color_input.get("name", "Unnamed"),
+                "source": {
+                    "profile": payload.source_profile,
+                    "rgb": [r, g, b],
+                    "lab": list(source_lab),
+                    "hex": source_hex
+                },
+                "rendered": {
+                    "profile": payload.target_profile,
+                    "rgb": list(rendered_rgb),
+                    "lab": list(rendered_lab),
+                    "hex": rendered_hex
+                },
+                "delta_e": delta_e,
+                "intent": payload.intent,
+                "warning": "Noticeable difference" if delta_e > 2.0 else None
+            }
+            
+            results.append(result)
+        
+        return {
+            "comparison": {
+                "source_profile": payload.source_profile,
+                "target_profile": payload.target_profile,
+                "rendering_intent": payload.intent,
+                "color_count": len(results)
+            },
+            "results": results
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Render comparison failed: {str(e)}"
+        )
+
+
+@app.get("/render-comparison/profiles")
+def list_render_profiles():
+    """
+    List available rendering profiles for comparison.
+    """
+    return {
+        "source_profiles": [
+            {"name": "sRGB", "description": "Standard RGB (web/screen)"},
+            {"name": "AdobeRGB", "description": "Adobe RGB (wider gamut)"},
+            {"name": "ProPhotoRGB", "description": "ProPhoto RGB (very wide gamut)"}
+        ],
+        "target_profiles": [
+            {"name": "sRGB", "description": "Standard RGB (web/screen)"},
+            {"name": "GRACoL2013.icc", "description": "US commercial offset printing"},
+            {"name": "SWOP2013.icc", "description": "US publication printing"},
+            {"name": "PSO_Coated_v3.icc", "description": "European coated paper"}
+        ],
+        "rendering_intents": [
+            {"name": "perceptual", "description": "Preserves visual relationships"},
+            {"name": "relative", "description": "Preserves in-gamut colors exactly"},
+            {"name": "saturation", "description": "Maximizes saturation"},
+            {"name": "absolute", "description": "Exact colorimetric match"}
+        ]
+    }
+
+
+# -------------------------------------------------
 # Color database management endpoints (FIXED)
 # -------------------------------------------------
 
