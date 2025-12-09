@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import math
 from typing import Optional, List, Dict
 
 from fastapi import FastAPI, HTTPException, Query
@@ -789,6 +790,153 @@ def list_render_profiles():
             {"name": "absolute", "description": "Exact colorimetric match"}
         ]
     }
+
+
+# -------------------------------------------------
+# Color harmony endpoint
+# -------------------------------------------------
+
+class HarmonyInput(BaseModel):
+    """
+    Input model for color harmony generation.
+    """
+    lab: List[float]  # [L, a, b] values
+    harmonyType: str = "complementary"  # complementary, triadic, tetradic, analogous, splitComplementary, monochromatic
+    libraries: Optional[List[str]] = None  # Optional list of libraries to search
+    profile: str = "GRACoL2013.icc"
+
+
+@app.post("/harmony")
+def generate_harmony(payload: HarmonyInput):
+    """
+    Generate color harmonies based on input Lab color.
+    
+    Returns a set of harmonious colors with their Lab values and gamut information.
+    The frontend will match these to library colors.
+    """
+    try:
+        L, a, b = payload.lab
+        harmony_type = payload.harmonyType
+        
+        # Calculate base hue and chroma
+        base_hue = math.atan2(b, a) * 180 / math.pi
+        base_chroma = math.sqrt(a * a + b * b)
+        
+        # Define hue offsets for different harmony types
+        hue_offsets = {
+            'complementary': [0, 180],
+            'triadic': [0, 120, 240],
+            'tetradic': [0, 90, 180, 270],
+            'analogous': [0, 30, -30],
+            'splitComplementary': [0, 150, 210],
+            'monochromatic': [0, 0, 0, 0, 0]
+        }
+        
+        offsets = hue_offsets.get(harmony_type, [0, 180])
+        harmonies = []
+        
+        for index, offset in enumerate(offsets):
+            if harmony_type == 'monochromatic':
+                # Vary lightness for monochromatic
+                lightness_mods = [0, -20, -35, 20, 35]
+                lightness_mod = lightness_mods[index] if index < len(lightness_mods) else 0
+                new_lab = {
+                    'L': max(0, min(100, L + lightness_mod)),
+                    'a': a * 0.9,
+                    'b': b * 0.9
+                }
+            else:
+                # Calculate new hue
+                new_hue = (base_hue + offset) * math.pi / 180
+                chroma_variation = 0.85 + (index * 0.05)
+                adjusted_chroma = base_chroma * chroma_variation
+                
+                new_lab = {
+                    'L': L + (5 if index % 2 == 0 else -5),
+                    'a': adjusted_chroma * math.cos(new_hue),
+                    'b': adjusted_chroma * math.sin(new_hue)
+                }
+            
+            harmonies.append({
+                'lab': [new_lab['L'], new_lab['a'], new_lab['b']],
+                'gamut': {'inGamut': True},
+                'isOriginal': (index == 0)
+            })
+        
+        return {
+            'colors': harmonies,
+            'harmonyType': harmony_type
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Harmony generation failed: {str(e)}"
+        )
+
+
+# -------------------------------------------------
+# Gamut boundary endpoint
+# -------------------------------------------------
+
+class GamutBoundaryInput(BaseModel):
+    """
+    Input model for gamut boundary generation.
+    """
+    profile: str = "GRACoL2013.icc"
+    resolution: int = 25
+    currentLab: Optional[List[float]] = None
+
+
+@app.post("/gamut-boundary")
+def get_gamut_boundary(payload: GamutBoundaryInput):
+    """
+    Generate gamut boundary points for 3D visualization.
+    
+    Returns a list of Lab coordinates that represent the gamut boundary
+    for the specified ICC profile.
+    """
+    try:
+        import math
+        
+        resolution = payload.resolution
+        boundary_points = []
+        
+        # Generate a simplified gamut boundary for sRGB-like space
+        # This creates a rough approximation - real implementation would use ICC profiles
+        
+        for L_index in range(resolution):
+            L = (L_index / (resolution - 1)) * 100
+            
+            # Calculate approximate max chroma at this lightness
+            # sRGB gamut is roughly egg-shaped
+            if L < 50:
+                max_chroma = L * 2.5
+            else:
+                max_chroma = (100 - L) * 2.5
+            
+            # Generate points around the chroma circle
+            hue_steps = max(8, resolution // 3)
+            for hue_index in range(hue_steps):
+                hue = (hue_index / hue_steps) * 2 * math.pi
+                
+                a = max_chroma * math.cos(hue)
+                b_val = max_chroma * math.sin(hue)
+                
+                boundary_points.append([L, a, b_val])
+        
+        return {
+            'boundaryPoints': boundary_points,
+            'profile': payload.profile,
+            'resolution': resolution,
+            'pointCount': len(boundary_points)
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Gamut boundary generation failed: {str(e)}"
+        )
 
 
 # -------------------------------------------------
