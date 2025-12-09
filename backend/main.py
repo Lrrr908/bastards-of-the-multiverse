@@ -585,9 +585,93 @@ def gamut_check(payload: dict):
 # Rendering comparison endpoints
 # -------------------------------------------------
 
+class RenderingIntentInput(BaseModel):
+    """
+    Input model for rendering intent comparison.
+    The frontend sends Lab values and expects comparisons for all 4 intents.
+    """
+    lab: List[float]  # [L, a, b] values
+    targetProfile: str = "GRACoL2013.icc"  # Target profile
+
+
+@app.post("/rendering-intents")
+def rendering_intents(payload: RenderingIntentInput):
+    """
+    Compare how a Lab color renders with different rendering intents.
+    
+    Returns all 4 rendering intents (perceptual, relative, saturation, absolute)
+    with their Lab values and Delta E from the original.
+    
+    Expected by the frontend colormatch widget.
+    """
+    try:
+        L, a, b = payload.lab
+        source_lab = (L, a, b)
+        
+        # For now, simulate rendering intent transformations
+        # In a real implementation, this would use ICC profiles with different intents
+        rendering_intents = {}
+        
+        # Perceptual - slight compression for out-of-gamut colors
+        perceptual_lab = (
+            L * 0.98,
+            a * 0.95,
+            b * 0.95
+        )
+        rendering_intents['perceptual'] = {
+            'lab': list(perceptual_lab),
+            'deltaE': calculate_delta_e(source_lab, perceptual_lab),
+            'gamut': {'inGamut': True}
+        }
+        
+        # Relative Colorimetric - preserve in-gamut colors exactly
+        relative_lab = source_lab
+        rendering_intents['relative'] = {
+            'lab': list(relative_lab),
+            'deltaE': 0.0,
+            'gamut': {'inGamut': True}
+        }
+        
+        # Saturation - boost chroma slightly
+        saturation_lab = (
+            L,
+            a * 1.05,
+            b * 1.05
+        )
+        rendering_intents['saturation'] = {
+            'lab': list(saturation_lab),
+            'deltaE': calculate_delta_e(source_lab, saturation_lab),
+            'gamut': {'inGamut': True}
+        }
+        
+        # Absolute Colorimetric - adjust for paper white
+        absolute_lab = (
+            L * 0.99,
+            a * 0.98,
+            b * 0.98
+        )
+        rendering_intents['absolute'] = {
+            'lab': list(absolute_lab),
+            'deltaE': calculate_delta_e(source_lab, absolute_lab),
+            'gamut': {'inGamut': True}
+        }
+        
+        return {
+            'renderingIntents': rendering_intents,
+            'sourceProfile': 'Lab',
+            'targetProfile': payload.targetProfile
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Rendering intent comparison failed: {str(e)}"
+        )
+
+
 class RenderComparisonInput(BaseModel):
     """
-    Input model for render comparison.
+    Input model for render comparison (batch processing).
     """
     source_profile: str = "sRGB"  # Source color profile
     target_profile: str = "GRACoL2013.icc"  # Target rendering profile
