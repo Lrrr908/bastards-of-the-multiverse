@@ -1,0 +1,15 @@
+services:
+- type: web
+  name: botmcms-api
+  env: python
+  region: oregon
+  plan: free
+  buildCommand: |
+    apt-get update
+    apt-get install -y liblcms2-dev libjpeg-dev libpng-dev libtiff-dev libwebp-dev
+    pip install --upgrade pip
+    pip install -r requirements.txt
+  startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+  envVars:
+  - key: PYTHON_VERSION
+    value: 3.11.0
