@@ -41,6 +41,34 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/debug/pillow-status")
+def check_pillow_status():
+    """Debug endpoint to check PIL/LittleCMS availability"""
+    try:
+        import PIL
+        pil_version = PIL.__version__
+        
+        try:
+            from PIL import ImageCms
+            lcms_available = True
+            lcms_error = None
+        except ImportError as e:
+            lcms_available = False
+            lcms_error = str(e)
+            
+        return {
+            "PIL_installed": True,
+            "PIL_version": pil_version,
+            "LittleCMS_available": lcms_available,
+            "LittleCMS_error": lcms_error
+        }
+    except ImportError:
+        return {
+            "PIL_installed": False,
+            "error": "Pillow not installed"
+        }
+
+
 @app.get("/")
 def root():
     """
