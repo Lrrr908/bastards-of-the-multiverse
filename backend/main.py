@@ -25,8 +25,7 @@ ROOT_DIR = BACKEND_DIR.parent                      # /app
 INDEX_PATH = ROOT_DIR / "index.html"               # /app/index.html
 ICC_PROFILES_DIR = BACKEND_DIR / "icc_profiles"    # /app/backend/icc_profiles
 
-# If GRACoL2013.icc sits beside transicc and this file, point here.
-# Change to BACKEND_DIR / "lcms" / "GRACoL2013.icc" if you use a subfolder.
+# UPDATED: Fix the GRACoL profile path to the correct location
 GRACOL_PROFILE_PATH = ROOT_DIR / "botmcms" / "icc" / "GRACoL2013.icc"
 
 # Ensure ICC profiles directory exists
@@ -680,10 +679,16 @@ def convert_color(payload: dict):
         )
 
 
+# -------------------------------------------------
+# PROFESSIONAL GAMUT CHECKING WITH LITTLECMS
+# -------------------------------------------------
+
 @app.post("/gamut-check")
 def gamut_check(payload: dict):
     """
-    Check if a Lab color is within the gamut of a profile.
+    Professional gamut checking using LittleCMS and ICC profiles.
+    Uses roundtrip Lab -> CMYK -> Lab conversion to determine if a color
+    can be accurately reproduced in the target printing profile.
     """
     try:
         lab = payload.get("lab")
@@ -692,22 +697,105 @@ def gamut_check(payload: dict):
         if not lab:
             raise HTTPException(status_code=400, detail="Lab values required")
         
-        L, a, b = lab
+        L, a, b_val = lab
         
-        in_gamut = (
-            0 <= L <= 100 and
-            -128 <= a <= 127 and
-            -128 <= b <= 127 and
-            abs(a) < 100 and
-            abs(b) < 100
-        )
-        
-        return {
-            "gamut": {
-                "inGamut": in_gamut,
-                "profile": profile
+        # Use LittleCMS for real gamut checking
+        try:
+            from PIL import ImageCms, Image as PilImage
+            
+            if not GRACOL_PROFILE_PATH.exists():
+                raise RuntimeError(f"Profile not found at {GRACOL_PROFILE_PATH}")
+            
+            # Create Lab profile and target CMYK profile
+            lab_profile = ImageCms.createProfile("LAB")
+            cmyk_profile = ImageCms.getOpenProfile(str(GRACOL_PROFILE_PATH))
+            
+            # Convert Lab to 0-255 range for PIL
+            L_byte = int((L / 100.0) * 255)
+            a_byte = int(a + 128)
+            b_byte = int(b_val + 128)
+            
+            L_byte = max(0, min(255, L_byte))
+            a_byte = max(0, min(255, a_byte))
+            b_byte = max(0, min(255, b_byte))
+            
+            # Create Lab image
+            lab_img = PilImage.new("LAB", (1, 1), (L_byte, a_byte, b_byte))
+            
+            # Try to convert Lab -> CMYK
+            lab_to_cmyk_transform = ImageCms.buildTransformFromOpenProfiles(
+                lab_profile,
+                cmyk_profile,
+                "LAB",
+                "CMYK",
+                renderingIntent=ImageCms.INTENT_RELATIVE_COLORIMETRIC
+            )
+            
+            cmyk_img = ImageCms.applyTransform(lab_img, lab_to_cmyk_transform)
+            C, M, Y, K = cmyk_img.getpixel((0, 0))
+            
+            # Convert back CMYK -> Lab to check roundtrip accuracy
+            cmyk_to_lab_transform = ImageCms.buildTransformFromOpenProfiles(
+                cmyk_profile,
+                lab_profile,
+                "CMYK",
+                "LAB",
+                renderingIntent=ImageCms.INTENT_RELATIVE_COLORIMETRIC
+            )
+            
+            test_cmyk_img = PilImage.new("CMYK", (1, 1), (C, M, Y, K))
+            roundtrip_lab_img = ImageCms.applyTransform(test_cmyk_img, cmyk_to_lab_transform)
+            
+            rt_L_byte, rt_a_byte, rt_b_byte = roundtrip_lab_img.getpixel((0, 0))
+            
+            # Convert back to Lab values
+            rt_L = (rt_L_byte / 255.0) * 100
+            rt_a = rt_a_byte - 128
+            rt_b = rt_b_byte - 128
+            
+            # Calculate Delta E between original and roundtrip
+            delta_e = ((L - rt_L)**2 + (a - rt_a)**2 + (b_val - rt_b)**2) ** 0.5
+            
+            # If Delta E is small, the color is in gamut
+            # Professional threshold: < 2.0 = excellent, < 4.0 = acceptable
+            in_gamut = delta_e < 2.0
+            
+            return {
+                "gamut": {
+                    "inGamut": in_gamut,
+                    "profile": profile,
+                    "deltaE": round(delta_e, 2),
+                    "method": "LittleCMS_roundtrip",
+                    "cmykEquivalent": [
+                        round(C / 255.0 * 100.0, 1),
+                        round(M / 255.0 * 100.0, 1), 
+                        round(Y / 255.0 * 100.0, 1),
+                        round(K / 255.0 * 100.0, 1)
+                    ],
+                    "roundtripLab": [round(rt_L, 1), round(rt_a, 1), round(rt_b, 1)],
+                    "originalLab": [round(L, 1), round(a, 1), round(b_val, 1)]
+                }
             }
-        }
+            
+        except Exception as e:
+            # Fallback to simple range check if LittleCMS fails
+            print(f"LittleCMS gamut check failed: {e}")
+            simple_in_gamut = (
+                0 <= L <= 100 and
+                -128 <= a <= 127 and
+                -128 <= b_val <= 127 and
+                abs(a) < 100 and
+                abs(b_val) < 100
+            )
+            
+            return {
+                "gamut": {
+                    "inGamut": simple_in_gamut,
+                    "profile": profile,
+                    "method": "fallback_range_check",
+                    "warning": "LittleCMS unavailable, using basic range validation"
+                }
+            }
         
     except Exception as e:
         raise HTTPException(
