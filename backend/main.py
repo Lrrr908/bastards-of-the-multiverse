@@ -309,6 +309,50 @@ def calculate_delta_e(lab1: tuple, lab2: tuple) -> float:
 
 
 # -------------------------------------------------
+# Lab to Hex endpoint
+# -------------------------------------------------
+
+class LabToHexRequest(BaseModel):
+    L: float
+    a: float
+    b: float
+
+
+@app.post("/api/v1/color/lab-to-hex")
+def lab_to_hex(payload: LabToHexRequest):
+    """
+    Convert a Lab color to a hex value using the same engine
+    as the rest of BotMCMS.
+
+    Request:
+    {
+      "L": 84,
+      "a": 12.38,
+      "b": 75.26
+    }
+
+    Response:
+    {
+      "success": true,
+      "hex": "#E6D64A"
+    }
+    """
+    try:
+        r, g, b_val = lab_to_rgb(payload.L, payload.a, payload.b)
+        hex_color = rgb_to_hex(r, g, b_val)
+
+        return {
+            "success": True,
+            "hex": hex_color
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Lab to hex conversion failed: {str(e)}"
+        )
+
+
+# -------------------------------------------------
 # Mock color database - DISABLED (using real libraries now)
 # -------------------------------------------------
 
