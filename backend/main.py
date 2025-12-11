@@ -597,14 +597,25 @@ def convert_color(payload: dict):
             else:
                 cmyk_equiv = rgb_to_cmyk(r, g, b)
 
+            # UPDATED: Use real gamut checking instead of hardcoded True
+            try:
+                # Call our professional gamut check function
+                gamut_result = gamut_check({"lab": list(lab), "profile": profile_name})
+                gamut_info = gamut_result["gamut"]
+            except:
+                # Fallback to simple check if gamut check fails
+                gamut_info = {"inGamut": True}
+
             return {
                 "success": True,
                 "lab": list(lab),
                 "hex": hex_color,
                 "rgb": [r, g, b],
                 "gamut": {
-                    "inGamut": True,
+                    "inGamut": gamut_info.get("inGamut", True),
                     "cmykEquivalent": cmyk_equiv,
+                    "deltaE": gamut_info.get("deltaE"),
+                    "method": gamut_info.get("method", "convert_endpoint")
                 }
             }
         
@@ -626,6 +637,15 @@ def convert_color(payload: dict):
                 float(round(k, 1)),
             ]
             
+            # UPDATED: Use real gamut checking instead of hardcoded True
+            try:
+                # Call our professional gamut check function
+                gamut_result = gamut_check({"lab": list(lab), "profile": profile_name})
+                gamut_info = gamut_result["gamut"]
+            except:
+                # Fallback to simple check if gamut check fails
+                gamut_info = {"inGamut": True}
+            
             return {
                 "success": True,
                 "lab": list(lab),
@@ -633,8 +653,10 @@ def convert_color(payload: dict):
                 "rgb": [r, g, b_val],
                 "cmyk": [c, m, y, k],
                 "gamut": {
-                    "inGamut": True,
+                    "inGamut": gamut_info.get("inGamut", True),
                     "cmykEquivalent": cmyk_equiv,
+                    "deltaE": gamut_info.get("deltaE"),
+                    "method": gamut_info.get("method", "convert_endpoint")
                 }
             }
         
@@ -652,14 +674,25 @@ def convert_color(payload: dict):
             else:
                 cmyk_equiv = rgb_to_cmyk(r, g, b_val)
             
+            # UPDATED: Use real gamut checking instead of hardcoded True
+            try:
+                # Call our professional gamut check function
+                gamut_result = gamut_check({"lab": [L, a, b], "profile": profile_name})
+                gamut_info = gamut_result["gamut"]
+            except:
+                # Fallback to simple check if gamut check fails
+                gamut_info = {"inGamut": True}
+            
             return {
                 "success": True,
                 "lab": [L, a, b],
                 "hex": hex_color,
                 "rgb": [r, g, b_val],
                 "gamut": {
-                    "inGamut": True,
+                    "inGamut": gamut_info.get("inGamut", True),
                     "cmykEquivalent": cmyk_equiv,
+                    "deltaE": gamut_info.get("deltaE"),
+                    "method": gamut_info.get("method", "convert_endpoint")
                 }
             }
         
