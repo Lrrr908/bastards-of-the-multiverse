@@ -78,6 +78,12 @@ def root():
         return FileResponse(INDEX_PATH)
     raise HTTPException(status_code=500, detail="index.html not found in container")
 
+@app.get("/debug/version")
+def check_version():
+    return {
+        "version": "2.0_with_littlecms",
+        "timestamp": "2024-12-11_updated"
+    }
 
 # -------------------------------------------------
 # LCMS health check
