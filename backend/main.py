@@ -90,7 +90,7 @@ def gamut_check(payload: dict):
                 cmyk_profile,
                 "LAB",
                 "CMYK",
-                renderingIntent=ImageCms.INTENT_RELATIVE_COLORIMETRIC
+                renderingIntent=1
             )
             debug_info["step"] = "Transform created"
             
@@ -104,7 +104,7 @@ def gamut_check(payload: dict):
                 lab_profile,
                 "CMYK",
                 "LAB",
-                renderingIntent=ImageCms.INTENT_RELATIVE_COLORIMETRIC
+                renderingIntent=1
             )
             
             test_cmyk_img = PilImage.new("CMYK", (1, 1), (C, M, Y, K))
