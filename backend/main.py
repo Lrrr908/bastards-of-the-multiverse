@@ -25,6 +25,10 @@ ROOT_DIR = BACKEND_DIR.parent                      # /app
 INDEX_PATH = ROOT_DIR / "index.html"               # /app/index.html
 ICC_PROFILES_DIR = BACKEND_DIR / "icc_profiles"    # /app/backend/icc_profiles
 
+# If GRACoL2013.icc sits beside transicc and this file, point here.
+# Change to BACKEND_DIR / "lcms" / "GRACoL2013.icc" if you use a subfolder.
+GRACOL_PROFILE_PATH = BACKEND_DIR / "GRACoL2013.icc"
+
 # Ensure ICC profiles directory exists
 ICC_PROFILES_DIR.mkdir(exist_ok=True)
 
@@ -95,13 +99,47 @@ def hex_to_rgb(hex_color: str) -> tuple:
     """Convert hex color to RGB tuple (0-255)"""
     hex_color = hex_color.lstrip('#')
     if len(hex_color) == 3:
-        hex_color = ''.join([c*2 for c in hex_color])
+        hex_color = ''.join([c * 2 for c in hex_color])
     return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
 
 def rgb_to_hex(r: int, g: int, b: int) -> str:
     """Convert RGB to hex color"""
     return f"#{r:02x}{g:02x}{b:02x}".upper()
+
+
+def rgb_to_cmyk(r: int, g: int, b: int) -> List[float]:
+    """
+    Approximate RGB (0–255) to CMYK (0–100).
+    Returns [C, M, Y, K] as floats.
+    """
+    r_norm = r / 255.0
+    g_norm = g / 255.0
+    b_norm = b / 255.0
+
+    # Pure black special case
+    if r == 0 and g == 0 and b == 0:
+        return [0.0, 0.0, 0.0, 100.0]
+
+    c_prime = 1.0 - r_norm
+    m_prime = 1.0 - g_norm
+    y_prime = 1.0 - b_norm
+
+    k = min(c_prime, m_prime, y_prime)
+
+    if k >= 1.0:
+        return [0.0, 0.0, 0.0, 100.0]
+
+    c = (c_prime - k) / (1.0 - k)
+    m = (m_prime - k) / (1.0 - k)
+    y = (y_prime - k) / (1.0 - k)
+
+    return [
+        round(c * 100.0, 1),
+        round(m * 100.0, 1),
+        round(y * 100.0, 1),
+        round(k * 100.0, 1),
+    ]
 
 
 def rgb_to_lab(r: int, g: int, b: int) -> tuple:
@@ -111,7 +149,6 @@ def rgb_to_lab(r: int, g: int, b: int) -> tuple:
     """
     try:
         from PIL import Image, ImageCms
-        import io
         
         # Create an sRGB profile and Lab profile
         srgb_profile = ImageCms.createProfile("sRGB")
@@ -188,7 +225,7 @@ def rgb_to_lab_python(r: int, g: int, b: int) -> tuple:
         if t > delta**3:
             return t**(1/3)
         else:
-            return t/(3*delta**2) + 4/29
+            return t / (3 * delta**2) + 4/29
     
     fx = f(x)
     fy = f(y)
@@ -207,7 +244,7 @@ def lab_to_rgb(L: float, a: float, b: float) -> tuple:
     Returns (r, g, b) tuple.
     """
     try:
-        from PIL import Image, ImageCms
+        from PIL import ImageCms, Image as PilImage
         
         # Create Lab and sRGB profiles
         lab_profile = ImageCms.createProfile("LAB")
@@ -232,7 +269,7 @@ def lab_to_rgb(L: float, a: float, b: float) -> tuple:
         b_byte = max(0, min(255, b_byte))
         
         # Create a 1x1 pixel Lab image
-        lab_img = Image.new("LAB", (1, 1), (L_byte, a_byte, b_byte))
+        lab_img = PilImage.new("LAB", (1, 1), (L_byte, a_byte, b_byte))
         
         # Apply the transform
         rgb_img = ImageCms.applyTransform(lab_img, transform)
@@ -308,6 +345,56 @@ def calculate_delta_e(lab1: tuple, lab2: tuple) -> float:
     return round(delta_e, 2)
 
 
+def lab_to_cmyk_via_gracol(L: float, a: float, b: float, intent: int = 1) -> List[float]:
+    """
+    Convert Lab -> CMYK using the GRACoL profile via LittleCMS.
+    NO FALLBACK: if anything fails, raise an error so the caller can
+    surface it to the client.
+    intent: 0=Perceptual, 1=Relative, 2=Saturation, 3=Absolute (LittleCMS codes)
+    """
+    try:
+        from PIL import ImageCms, Image as PilImage
+
+        if not GRACOL_PROFILE_PATH.exists():
+            raise RuntimeError(f"GRACoL profile not found at {GRACOL_PROFILE_PATH}")
+
+        lab_profile = ImageCms.createProfile("LAB")
+        cmyk_profile = ImageCms.getOpenProfile(str(GRACOL_PROFILE_PATH))
+
+        transform = ImageCms.buildTransformFromOpenProfiles(
+            lab_profile,
+            cmyk_profile,
+            "LAB",
+            "CMYK",
+            renderingIntent=intent
+        )
+
+        # Lab to 0–255 representation
+        L_byte = int((L / 100.0) * 255)
+        a_byte = int(a + 128)
+        b_byte = int(b + 128)
+
+        L_byte = max(0, min(255, L_byte))
+        a_byte = max(0, min(255, a_byte))
+        b_byte = max(0, min(255, b_byte))
+
+        lab_img = PilImage.new("LAB", (1, 1), (L_byte, a_byte, b_byte))
+        cmyk_img = ImageCms.applyTransform(lab_img, transform)
+        C, M, Y, K = cmyk_img.getpixel((0, 0))
+
+        # 0–255 CMYK to 0–100
+        return [
+            round(C / 255.0 * 100.0, 1),
+            round(M / 255.0 * 100.0, 1),
+            round(Y / 255.0 * 100.0, 1),
+            round(K / 255.0 * 100.0, 1),
+        ]
+
+    except Exception as e:
+        # NO SILENT FALLBACK HERE
+        raise RuntimeError(f"GRACoL CMYK conversion failed: {e}")
+
+
 # -------------------------------------------------
 # Lab to Hex endpoint
 # -------------------------------------------------
@@ -323,19 +410,6 @@ def lab_to_hex(payload: LabToHexRequest):
     """
     Convert a Lab color to a hex value using the same engine
     as the rest of BotMCMS.
-
-    Request:
-    {
-      "L": 84,
-      "a": 12.38,
-      "b": 75.26
-    }
-
-    Response:
-    {
-      "success": true,
-      "hex": "#E6D64A"
-    }
     """
     try:
         r, g, b_val = lab_to_rgb(payload.L, payload.a, payload.b)
@@ -355,23 +429,6 @@ def lab_to_hex(payload: LabToHexRequest):
 # -------------------------------------------------
 # Mock color database - DISABLED (using real libraries now)
 # -------------------------------------------------
-
-# Mock database removed - we're using real color libraries from JSON files
-# The /colormatch endpoint now only returns the input color data
-# The frontend will search through the loaded libraries
-
-# COLOR_DATABASE = [
-#     {
-#         "family": "resin",
-#         "brand": "Siraya Tech",
-#         "product_line": "Fast",
-#         "name": "Fast Yellow",
-#         "hex": "#F8C94D",
-#         "lab": (84.5, 15.2, 68.3)
-#     },
-#     ...
-# ]
-
 
 def find_closest_colors(target_lab: tuple, max_results: int = 5) -> List[Dict]:
     """
@@ -397,9 +454,6 @@ class ColorInput(BaseModel):
 def colormatch(payload: ColorInput):
     """
     Color matching endpoint using pure Python for accurate color conversions.
-    
-    Accepts various input types and returns the closest matching colors
-    from the database using Delta E calculations in Lab color space.
     """
     input_type = payload.input_type.lower()
     value = payload.value.strip()
@@ -440,8 +494,6 @@ def colormatch(payload: ColorInput):
             }
             
         elif input_type == "bastone":
-            # For Bastone codes, you'd look up in a database
-            # For now, return a mock response
             return {
                 "input": {
                     "type": payload.input_type,
@@ -451,7 +503,6 @@ def colormatch(payload: ColorInput):
             }
             
         elif input_type == "paint":
-            # For paint brands, you'd look up in a database
             return {
                 "input": {
                     "type": payload.input_type,
@@ -476,7 +527,7 @@ def colormatch(payload: ColorInput):
             detail="RGB values must be between 0 and 255"
         )
     
-    # Convert to Lab using pure Python
+    # Convert to Lab
     try:
         lab = rgb_to_lab(r, g, b)
     except Exception as e:
@@ -485,7 +536,6 @@ def colormatch(payload: ColorInput):
             detail=f"Failed to convert to Lab color space: {str(e)}"
         )
     
-    # Return only the input data - frontend will search libraries
     return {
         "input": {
             "type": payload.input_type,
@@ -494,7 +544,7 @@ def colormatch(payload: ColorInput):
             "rgb": [r, g, b],
             "lab": list(lab),
         },
-        "matches": []  # Frontend will populate this from libraries
+        "matches": []
     }
 
 
@@ -518,21 +568,44 @@ def colormatch_get(
 def convert_color(payload: dict):
     """
     Universal color conversion endpoint.
-    Converts between different color spaces using LittleCMS.
+    Converts between different color spaces using LittleCMS
+    (or pure Python fallback).
+
+    The harmony widget calls this like:
+
+    {
+      "lab": [L, a, b],
+      "profile": "GRACoL2013.icc",
+      "renderingIntent": 1
+    }
     """
     try:
+        profile_name = str(payload.get("profile", "") or "")
+        rendering_intent = int(payload.get("renderingIntent", 1) or 1)
+
+        # Helper: should we use GRACoL profile?
+        def wants_gracol(name: str) -> bool:
+            return "gracol" in name.lower()
+
         # Handle RGB input
         if "rgb" in payload:
             r, g, b = payload["rgb"]
             lab = rgb_to_lab(r, g, b)
             hex_color = rgb_to_hex(r, g, b)
-            
+
+            if wants_gracol(profile_name):
+                cmyk_equiv = lab_to_cmyk_via_gracol(lab[0], lab[1], lab[2], rendering_intent)
+            else:
+                cmyk_equiv = rgb_to_cmyk(r, g, b)
+
             return {
+                "success": True,
                 "lab": list(lab),
                 "hex": hex_color,
                 "rgb": [r, g, b],
                 "gamut": {
-                    "inGamut": True  # Simplified for now
+                    "inGamut": True,
+                    "cmykEquivalent": cmyk_equiv,
                 }
             }
         
@@ -540,37 +613,54 @@ def convert_color(payload: dict):
         elif "cmyk" in payload:
             c, m, y, k = payload["cmyk"]
             
-            # Simple CMYK to RGB conversion
-            r = int(255 * (1 - c/100) * (1 - k/100))
-            g = int(255 * (1 - m/100) * (1 - k/100))
-            b_val = int(255 * (1 - y/100) * (1 - k/100))
+            # Simple CMYK to RGB conversion (0–100 to 0–255)
+            r = int(255 * (1 - c / 100.0) * (1 - k / 100.0))
+            g = int(255 * (1 - m / 100.0) * (1 - k / 100.0))
+            b_val = int(255 * (1 - y / 100.0) * (1 - k / 100.0))
             
             lab = rgb_to_lab(r, g, b_val)
             hex_color = rgb_to_hex(r, g, b_val)
+            cmyk_equiv = [
+                float(round(c, 1)),
+                float(round(m, 1)),
+                float(round(y, 1)),
+                float(round(k, 1)),
+            ]
             
             return {
+                "success": True,
                 "lab": list(lab),
                 "hex": hex_color,
                 "rgb": [r, g, b_val],
                 "cmyk": [c, m, y, k],
                 "gamut": {
                     "inGamut": True,
-                    "cmykEquivalent": [c, m, y, k]
+                    "cmykEquivalent": cmyk_equiv,
                 }
             }
         
-        # Handle Lab input
+        # Handle Lab input (this is what your harmony widget uses)
         elif "lab" in payload:
             L, a, b = payload["lab"]
+            
+            # Lab -> RGB for hex + preview
             r, g, b_val = lab_to_rgb(L, a, b)
             hex_color = rgb_to_hex(r, g, b_val)
             
+            # Lab -> CMYK via GRACoL if requested, else approximate
+            if wants_gracol(profile_name):
+                cmyk_equiv = lab_to_cmyk_via_gracol(L, a, b, rendering_intent)
+            else:
+                cmyk_equiv = rgb_to_cmyk(r, g, b_val)
+            
             return {
+                "success": True,
                 "lab": [L, a, b],
                 "hex": hex_color,
                 "rgb": [r, g, b_val],
                 "gamut": {
-                    "inGamut": True
+                    "inGamut": True,
+                    "cmykEquivalent": cmyk_equiv,
                 }
             }
         
@@ -580,7 +670,10 @@ def convert_color(payload: dict):
                 detail="Must provide 'rgb', 'cmyk', or 'lab' in request"
             )
             
+    except HTTPException:
+        raise
     except Exception as e:
+        # If GRACoL or any step blows up, you see it here – no hidden fallback.
         raise HTTPException(
             status_code=500,
             detail=f"Color conversion failed: {str(e)}"
@@ -599,11 +692,8 @@ def gamut_check(payload: dict):
         if not lab:
             raise HTTPException(status_code=400, detail="Lab values required")
         
-        # For now, return a simple in-gamut check
-        # Real implementation would use ICC profiles
         L, a, b = lab
         
-        # Simple heuristic: colors are "in gamut" if they're not too extreme
         in_gamut = (
             0 <= L <= 100 and
             -128 <= a <= 127 and
@@ -643,21 +733,14 @@ class RenderingIntentInput(BaseModel):
 def rendering_intents(payload: RenderingIntentInput):
     """
     Compare how a Lab color renders with different rendering intents.
-    
-    Returns all 4 rendering intents (perceptual, relative, saturation, absolute)
-    with their Lab values and Delta E from the original.
-    
-    Expected by the frontend colormatch widget.
     """
     try:
         L, a, b = payload.lab
         source_lab = (L, a, b)
         
-        # For now, simulate rendering intent transformations
-        # In a real implementation, this would use ICC profiles with different intents
         rendering_intents = {}
         
-        # Perceptual - slight compression for out-of-gamut colors
+        # Perceptual
         perceptual_lab = (
             L * 0.98,
             a * 0.95,
@@ -669,7 +752,7 @@ def rendering_intents(payload: RenderingIntentInput):
             'gamut': {'inGamut': True}
         }
         
-        # Relative Colorimetric - preserve in-gamut colors exactly
+        # Relative
         relative_lab = source_lab
         rendering_intents['relative'] = {
             'lab': list(relative_lab),
@@ -677,7 +760,7 @@ def rendering_intents(payload: RenderingIntentInput):
             'gamut': {'inGamut': True}
         }
         
-        # Saturation - boost chroma slightly
+        # Saturation
         saturation_lab = (
             L,
             a * 1.05,
@@ -689,7 +772,7 @@ def rendering_intents(payload: RenderingIntentInput):
             'gamut': {'inGamut': True}
         }
         
-        # Absolute Colorimetric - adjust for paper white
+        # Absolute
         absolute_lab = (
             L * 0.99,
             a * 0.98,
@@ -718,27 +801,21 @@ class RenderComparisonInput(BaseModel):
     """
     Input model for render comparison (batch processing).
     """
-    source_profile: str = "sRGB"  # Source color profile
-    target_profile: str = "GRACoL2013.icc"  # Target rendering profile
-    colors: List[Dict]  # List of colors to compare, each with rgb or lab
-    intent: str = "perceptual"  # Rendering intent: perceptual, relative, saturation, absolute
+    source_profile: str = "sRGB"
+    target_profile: str = "GRACoL2013.icc"
+    colors: List[Dict]
+    intent: str = "perceptual"
 
 
 @app.post("/render-comparison")
 def render_comparison(payload: RenderComparisonInput):
     """
     Compare how colors will render across different profiles.
-    
-    Takes a list of colors and shows how they would appear when converted
-    between different color profiles (e.g., sRGB screen vs. CMYK print).
-    
-    Returns the original color and the rendered version with Delta E calculations.
     """
     try:
         results = []
         
         for color_input in payload.colors:
-            # Get source color
             if "rgb" in color_input:
                 r, g, b = color_input["rgb"]
                 source_lab = rgb_to_lab(r, g, b)
@@ -751,25 +828,17 @@ def render_comparison(payload: RenderComparisonInput):
             else:
                 continue
             
-            # For now, simulate rendering by applying a simple transformation
-            # In a full implementation, this would use ICC profiles
             if payload.target_profile.lower() in ["gracol2013.icc", "cmyk", "print"]:
-                # Simulate CMYK gamut compression
-                # Colors tend to get slightly duller in print
                 rendered_lab = (
-                    source_lab[0] * 0.95,  # Slightly reduce lightness
-                    source_lab[1] * 0.90,  # Compress a* slightly
-                    source_lab[2] * 0.90   # Compress b* slightly
+                    source_lab[0] * 0.95,
+                    source_lab[1] * 0.90,
+                    source_lab[2] * 0.90
                 )
             else:
-                # No transformation for same profile
                 rendered_lab = source_lab
             
-            # Convert rendered Lab back to RGB
             rendered_rgb = lab_to_rgb(rendered_lab[0], rendered_lab[1], rendered_lab[2])
             rendered_hex = rgb_to_hex(*rendered_rgb)
-            
-            # Calculate Delta E
             delta_e = calculate_delta_e(source_lab, rendered_lab)
             
             result = {
@@ -844,9 +913,9 @@ class HarmonyInput(BaseModel):
     """
     Input model for color harmony generation.
     """
-    lab: List[float]  # [L, a, b] values
-    harmonyType: str = "complementary"  # complementary, triadic, tetradic, analogous, splitComplementary, monochromatic
-    libraries: Optional[List[str]] = None  # Optional list of libraries to search
+    lab: List[float]
+    harmonyType: str = "complementary"
+    libraries: Optional[List[str]] = None
     profile: str = "GRACoL2013.icc"
 
 
@@ -854,19 +923,14 @@ class HarmonyInput(BaseModel):
 def generate_harmony(payload: HarmonyInput):
     """
     Generate color harmonies based on input Lab color.
-    
-    Returns a set of harmonious colors with their Lab values and gamut information.
-    The frontend will match these to library colors.
     """
     try:
         L, a, b = payload.lab
         harmony_type = payload.harmonyType
         
-        # Calculate base hue and chroma
         base_hue = math.atan2(b, a) * 180 / math.pi
         base_chroma = math.sqrt(a * a + b * b)
         
-        # Define hue offsets for different harmony types
         hue_offsets = {
             'complementary': [0, 180],
             'triadic': [0, 120, 240],
@@ -881,7 +945,6 @@ def generate_harmony(payload: HarmonyInput):
         
         for index, offset in enumerate(offsets):
             if harmony_type == 'monochromatic':
-                # Vary lightness for monochromatic
                 lightness_mods = [0, -20, -35, 20, 35]
                 lightness_mod = lightness_mods[index] if index < len(lightness_mods) else 0
                 new_lab = {
@@ -890,7 +953,6 @@ def generate_harmony(payload: HarmonyInput):
                     'b': b * 0.9
                 }
             else:
-                # Calculate new hue
                 new_hue = (base_hue + offset) * math.pi / 180
                 chroma_variation = 0.85 + (index * 0.05)
                 adjusted_chroma = base_chroma * chroma_variation
@@ -936,30 +998,19 @@ class GamutBoundaryInput(BaseModel):
 def get_gamut_boundary(payload: GamutBoundaryInput):
     """
     Generate gamut boundary points for 3D visualization.
-    
-    Returns a list of Lab coordinates that represent the gamut boundary
-    for the specified ICC profile.
     """
     try:
-        import math
-        
         resolution = payload.resolution
         boundary_points = []
-        
-        # Generate a simplified gamut boundary for sRGB-like space
-        # This creates a rough approximation - real implementation would use ICC profiles
         
         for L_index in range(resolution):
             L = (L_index / (resolution - 1)) * 100
             
-            # Calculate approximate max chroma at this lightness
-            # sRGB gamut is roughly egg-shaped
             if L < 50:
                 max_chroma = L * 2.5
             else:
                 max_chroma = (100 - L) * 2.5
             
-            # Generate points around the chroma circle
             hue_steps = max(8, resolution // 3)
             for hue_index in range(hue_steps):
                 hue = (hue_index / hue_steps) * 2 * math.pi
@@ -984,7 +1035,7 @@ def get_gamut_boundary(payload: GamutBoundaryInput):
 
 
 # -------------------------------------------------
-# Color database management endpoints (FIXED)
+# Color database management endpoints
 # -------------------------------------------------
 
 @app.get("/libraries/list")
@@ -1008,12 +1059,9 @@ def get_library(library_name: str):
     """
     Load a color library JSON file and add hex colors from Lab values.
     Supports: pantone, behr, sherwin, benjaminmoore
-    
-    FIXED: Corrected file paths for all libraries.
     """
     import json
     
-    # Map library names to file paths - CORRECTED PATHS
     library_files = {
         "pantone": ROOT_DIR / "botmcms" / "libraries" / "pantone.json",
         "behr": ROOT_DIR / "botmcms" / "libraries" / "behr.json",
@@ -1039,26 +1087,21 @@ def get_library(library_name: str):
         with open(file_path, 'r', encoding='utf-8') as f:
             colors = json.load(f)
         
-        # Process each color: add hex if missing, convert Lab format
         processed_colors = []
         for color in colors:
             try:
-                # Handle different Lab formats
                 if "lab" in color:
                     lab = color["lab"]
                 elif "L" in color and "a" in color and "b" in color:
                     lab = [color["L"], color["a"], color["b"]]
                 else:
-                    # Skip colors without Lab data
                     print(f"Warning: Color {color.get('name', 'Unknown')} has no Lab data")
                     continue
                 
-                # Ensure lab is a list of 3 numbers
                 if not isinstance(lab, (list, tuple)) or len(lab) != 3:
                     print(f"Warning: Invalid Lab format for {color.get('name', 'Unknown')}")
                     continue
                 
-                # Generate hex from Lab if not present
                 if "hex" not in color or not color["hex"]:
                     r, g, b = lab_to_rgb(lab[0], lab[1], lab[2])
                     hex_color = rgb_to_hex(r, g, b)
@@ -1080,11 +1123,6 @@ def get_library(library_name: str):
         
         return processed_colors
         
-    except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to parse JSON file: {str(e)}"
-        )
     except Exception as e:
         raise HTTPException(
             status_code=500,
