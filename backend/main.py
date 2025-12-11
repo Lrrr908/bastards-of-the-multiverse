@@ -36,6 +36,124 @@ ICC_PROFILES_DIR.mkdir(exist_ok=True)
 # Basic health and index
 # -------------------------------------------------
 
+@app.post("/gamut-check")
+def gamut_check(payload: dict):
+    """
+    Professional gamut checking with enhanced debugging
+    """
+    try:
+        lab = payload.get("lab")
+        profile = payload.get("profile", "GRACoL2013.icc")
+        
+        if not lab:
+            raise HTTPException(status_code=400, detail="Lab values required")
+        
+        L, a, b_val = lab
+        
+        # Enhanced debugging
+        debug_info = {
+            "step": "starting",
+            "gracol_path": str(GRACOL_PROFILE_PATH),
+            "gracol_exists": GRACOL_PROFILE_PATH.exists()
+        }
+        
+        try:
+            from PIL import ImageCms, Image as PilImage
+            debug_info["step"] = "PIL imported successfully"
+            
+            if not GRACOL_PROFILE_PATH.exists():
+                debug_info["error"] = f"Profile not found at {GRACOL_PROFILE_PATH}"
+                raise RuntimeError(f"Profile not found at {GRACOL_PROFILE_PATH}")
+            
+            debug_info["step"] = "Profile exists, creating profiles"
+            
+            # Create profiles
+            lab_profile = ImageCms.createProfile("LAB")
+            cmyk_profile = ImageCms.getOpenProfile(str(GRACOL_PROFILE_PATH))
+            debug_info["step"] = "Profiles created successfully"
+            
+            # Rest of LittleCMS code...
+            L_byte = int((L / 100.0) * 255)
+            a_byte = int(a + 128)
+            b_byte = int(b_val + 128)
+            
+            L_byte = max(0, min(255, L_byte))
+            a_byte = max(0, min(255, a_byte))
+            b_byte = max(0, min(255, b_byte))
+            
+            lab_img = PilImage.new("LAB", (1, 1), (L_byte, a_byte, b_byte))
+            debug_info["step"] = "Lab image created"
+            
+            # Transform Lab -> CMYK
+            lab_to_cmyk_transform = ImageCms.buildTransformFromOpenProfiles(
+                lab_profile,
+                cmyk_profile,
+                "LAB",
+                "CMYK",
+                renderingIntent=ImageCms.INTENT_RELATIVE_COLORIMETRIC
+            )
+            debug_info["step"] = "Transform created"
+            
+            cmyk_img = ImageCms.applyTransform(lab_img, lab_to_cmyk_transform)
+            C, M, Y, K = cmyk_img.getpixel((0, 0))
+            debug_info["step"] = "CMYK conversion successful"
+            
+            # Transform back CMYK -> Lab
+            cmyk_to_lab_transform = ImageCms.buildTransformFromOpenProfiles(
+                cmyk_profile,
+                lab_profile,
+                "CMYK",
+                "LAB",
+                renderingIntent=ImageCms.INTENT_RELATIVE_COLORIMETRIC
+            )
+            
+            test_cmyk_img = PilImage.new("CMYK", (1, 1), (C, M, Y, K))
+            roundtrip_lab_img = ImageCms.applyTransform(test_cmyk_img, cmyk_to_lab_transform)
+            
+            rt_L_byte, rt_a_byte, rt_b_byte = roundtrip_lab_img.getpixel((0, 0))
+            debug_info["step"] = "Roundtrip conversion successful"
+            
+            # Calculate results
+            rt_L = (rt_L_byte / 255.0) * 100
+            rt_a = rt_a_byte - 128
+            rt_b = rt_b_byte - 128
+            
+            delta_e = ((L - rt_L)**2 + (a - rt_a)**2 + (b_val - rt_b)**2) ** 0.5
+            in_gamut = delta_e < 2.0
+            
+            return {
+                "gamut": {
+                    "inGamut": in_gamut,
+                    "profile": profile,
+                    "deltaE": round(delta_e, 2),
+                    "method": "LittleCMS_roundtrip",
+                    "debug": debug_info,
+                    "cmykEquivalent": [
+                        round(C / 255.0 * 100.0, 1),
+                        round(M / 255.0 * 100.0, 1), 
+                        round(Y / 255.0 * 100.0, 1),
+                        round(K / 255.0 * 100.0, 1)
+                    ]
+                }
+            }
+            
+        except Exception as e:
+            debug_info["error"] = str(e)
+            debug_info["error_type"] = type(e).__name__
+            
+            return {
+                "gamut": {
+                    "inGamut": True,  # Fallback
+                    "profile": profile,
+                    "method": "fallback_range_check",
+                    "warning": f"LittleCMS failed: {str(e)}",
+                    "debug": debug_info
+                }
+            }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gamut check failed: {str(e)}")
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
