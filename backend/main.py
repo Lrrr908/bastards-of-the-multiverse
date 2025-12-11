@@ -27,7 +27,7 @@ ICC_PROFILES_DIR = BACKEND_DIR / "icc_profiles"    # /app/backend/icc_profiles
 
 # If GRACoL2013.icc sits beside transicc and this file, point here.
 # Change to BACKEND_DIR / "lcms" / "GRACoL2013.icc" if you use a subfolder.
-GRACOL_PROFILE_PATH = BACKEND_DIR / "GRACoL2013.icc"
+GRACOL_PROFILE_PATH = ROOT_DIR / "botmcms" / "icc" / "GRACoL2013.icc"
 
 # Ensure ICC profiles directory exists
 ICC_PROFILES_DIR.mkdir(exist_ok=True)
