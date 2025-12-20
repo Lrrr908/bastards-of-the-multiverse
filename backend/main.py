@@ -486,14 +486,123 @@ def lab_to_rgb_python(L: float, a: float, b: float) -> tuple:
 
 def calculate_delta_e(lab1: tuple, lab2: tuple) -> float:
     """
+    DEPRECATED: Use calculate_delta_e_2000() instead.
+    
     Calculate Delta E (CIE76) between two Lab colors.
-    This is a simple Euclidean distance in Lab space.
+    This is a simple Euclidean distance in Lab space - NOT perceptually uniform.
+    Kept for backwards compatibility only.
     """
     l1, a1, b1 = lab1
     l2, a2, b2 = lab2
     
     delta_e = ((l2 - l1)**2 + (a2 - a1)**2 + (b2 - b1)**2) ** 0.5
     return round(delta_e, 2)
+
+
+def calculate_delta_e_2000(lab1: tuple, lab2: tuple, kL: float = 1.0, kC: float = 1.0, kH: float = 1.0) -> float:
+    """
+    Calculate Delta E 2000 (CIEDE2000) between two Lab colors.
+    This is the industry standard for perceptual color difference.
+    
+    Parameters:
+        lab1, lab2: (L, a, b) tuples
+        kL, kC, kH: Weighting factors (default 1.0 for standard conditions)
+    
+    Returns:
+        Delta E 2000 value (float)
+    """
+    L1, a1, b1 = lab1
+    L2, a2, b2 = lab2
+    
+    # Calculate C1, C2 (Chroma)
+    C1 = math.hypot(a1, b1)
+    C2 = math.hypot(a2, b2)
+    C_avg = (C1 + C2) / 2.0
+    
+    # Calculate G factor
+    C_avg_pow7 = C_avg ** 7
+    G = 0.5 * (1.0 - math.sqrt(C_avg_pow7 / (C_avg_pow7 + 25.0 ** 7)))
+    
+    # Calculate a' (a-prime)
+    a1_prime = (1.0 + G) * a1
+    a2_prime = (1.0 + G) * a2
+    
+    # Calculate C' (C-prime)
+    C1_prime = math.hypot(a1_prime, b1)
+    C2_prime = math.hypot(a2_prime, b2)
+    C_prime_avg = (C1_prime + C2_prime) / 2.0
+    
+    # Calculate h' (h-prime) in degrees
+    def calc_h_prime(a_prime, b_val):
+        if a_prime == 0 and b_val == 0:
+            return 0.0
+        h = math.degrees(math.atan2(b_val, a_prime))
+        return h + 360.0 if h < 0 else h
+    
+    h1_prime = calc_h_prime(a1_prime, b1)
+    h2_prime = calc_h_prime(a2_prime, b2)
+    
+    # Calculate delta values
+    delta_L_prime = L2 - L1
+    delta_C_prime = C2_prime - C1_prime
+    
+    # Calculate delta h'
+    if C1_prime * C2_prime == 0:
+        delta_h_prime = 0.0
+    else:
+        h_diff = h2_prime - h1_prime
+        if abs(h_diff) <= 180.0:
+            delta_h_prime = h_diff
+        elif h_diff > 180.0:
+            delta_h_prime = h_diff - 360.0
+        else:
+            delta_h_prime = h_diff + 360.0
+    
+    # Calculate delta H'
+    delta_H_prime = 2.0 * math.sqrt(C1_prime * C2_prime) * math.sin(math.radians(delta_h_prime / 2.0))
+    
+    # Calculate L' average
+    L_prime_avg = (L1 + L2) / 2.0
+    
+    # Calculate H' average
+    if C1_prime * C2_prime == 0:
+        H_prime_avg = h1_prime + h2_prime
+    else:
+        h_sum = h1_prime + h2_prime
+        if abs(h1_prime - h2_prime) <= 180.0:
+            H_prime_avg = h_sum / 2.0
+        elif h_sum < 360.0:
+            H_prime_avg = (h_sum + 360.0) / 2.0
+        else:
+            H_prime_avg = (h_sum - 360.0) / 2.0
+    
+    # Calculate T
+    T = (1.0 
+         - 0.17 * math.cos(math.radians(H_prime_avg - 30.0))
+         + 0.24 * math.cos(math.radians(2.0 * H_prime_avg))
+         + 0.32 * math.cos(math.radians(3.0 * H_prime_avg + 6.0))
+         - 0.20 * math.cos(math.radians(4.0 * H_prime_avg - 63.0)))
+    
+    # Calculate SL, SC, SH
+    L_prime_avg_minus_50_sq = (L_prime_avg - 50.0) ** 2
+    SL = 1.0 + (0.015 * L_prime_avg_minus_50_sq) / math.sqrt(20.0 + L_prime_avg_minus_50_sq)
+    SC = 1.0 + 0.045 * C_prime_avg
+    SH = 1.0 + 0.015 * C_prime_avg * T
+    
+    # Calculate RT (rotation term)
+    delta_theta = 30.0 * math.exp(-((H_prime_avg - 275.0) / 25.0) ** 2)
+    C_prime_avg_pow7 = C_prime_avg ** 7
+    RC = 2.0 * math.sqrt(C_prime_avg_pow7 / (C_prime_avg_pow7 + 25.0 ** 7))
+    RT = -RC * math.sin(math.radians(2.0 * delta_theta))
+    
+    # Calculate final Delta E 2000
+    term1 = delta_L_prime / (kL * SL)
+    term2 = delta_C_prime / (kC * SC)
+    term3 = delta_H_prime / (kH * SH)
+    
+    delta_e_2000 = math.sqrt(term1 ** 2 + term2 ** 2 + term3 ** 2 + RT * term2 * term3)
+    
+    return round(delta_e_2000, 4)
 
 
 def lab_to_cmyk_via_gracol(L: float, a: float, b: float, intent: int = 1) -> List[float]:
@@ -1021,7 +1130,7 @@ def rendering_intents(payload: RenderingIntentInput):
         )
         rendering_intents['perceptual'] = {
             'lab': list(perceptual_lab),
-            'deltaE': calculate_delta_e(source_lab, perceptual_lab),
+            'deltaE': calculate_delta_e_2000(source_lab, perceptual_lab),
             'gamut': {'inGamut': True}
         }
         
@@ -1041,7 +1150,7 @@ def rendering_intents(payload: RenderingIntentInput):
         )
         rendering_intents['saturation'] = {
             'lab': list(saturation_lab),
-            'deltaE': calculate_delta_e(source_lab, saturation_lab),
+            'deltaE': calculate_delta_e_2000(source_lab, saturation_lab),
             'gamut': {'inGamut': True}
         }
         
@@ -1053,7 +1162,7 @@ def rendering_intents(payload: RenderingIntentInput):
         )
         rendering_intents['absolute'] = {
             'lab': list(absolute_lab),
-            'deltaE': calculate_delta_e(source_lab, absolute_lab),
+            'deltaE': calculate_delta_e_2000(source_lab, absolute_lab),
             'gamut': {'inGamut': True}
         }
         
@@ -1112,7 +1221,7 @@ def render_comparison(payload: RenderComparisonInput):
             
             rendered_rgb = lab_to_rgb(rendered_lab[0], rendered_lab[1], rendered_lab[2])
             rendered_hex = rgb_to_hex(*rendered_rgb)
-            delta_e = calculate_delta_e(source_lab, rendered_lab)
+            delta_e = calculate_delta_e_2000(source_lab, rendered_lab)
             
             result = {
                 "name": color_input.get("name", "Unnamed"),
@@ -1447,3 +1556,395 @@ def check_library_status():
         "root_dir": str(ROOT_DIR),
         "libraries": status
     }
+
+
+# -------------------------------------------------
+# COLOR CONSENSUS & COMPARISON ENDPOINT
+# Professional color comparison with outlier rejection
+# -------------------------------------------------
+
+class ColorSample(BaseModel):
+    """
+    A single color sample that can be in various formats.
+    """
+    format: str  # "lab", "rgb", "hex", "cmyk"
+    value: List[float] | str  # [L, a, b], [R, G, B], "#RRGGBB", [C, M, Y, K]
+    label: Optional[str] = None
+    profile: Optional[str] = None  # For CMYK, defaults to GRACoL2013.icc
+
+
+class ColorConsensusInput(BaseModel):
+    """
+    Input model for color consensus calculation.
+    """
+    colors: List[ColorSample]
+    outlier_threshold: float = 3.0  # ΔE2000 threshold for outlier detection
+    rendering_intent: int = 1  # 0=Perceptual, 1=Relative, 2=Saturation, 3=Absolute
+    include_pairwise: bool = True  # Include full pairwise comparison matrix
+    include_hex_preview: bool = True  # Include hex preview of consensus
+
+
+def normalize_color_to_lab(sample: ColorSample, rendering_intent: int = 1) -> tuple:
+    """
+    Normalize any color format to Lab values using LittleCMS where applicable.
+    
+    Returns: (L, a, b) tuple
+    Raises: ValueError if conversion fails
+    """
+    fmt = sample.format.lower()
+    
+    if fmt == "lab":
+        # Validate Lab values
+        if isinstance(sample.value, str):
+            parts = re.split(r'[,\s]+', sample.value.strip())
+            L, a, b = float(parts[0]), float(parts[1]), float(parts[2])
+        else:
+            L, a, b = sample.value[0], sample.value[1], sample.value[2]
+        
+        # Validate ranges
+        if not (0 <= L <= 100):
+            raise ValueError(f"L value {L} out of range [0, 100]")
+        if not (-128 <= a <= 127):
+            raise ValueError(f"a value {a} out of range [-128, 127]")
+        if not (-128 <= b <= 127):
+            raise ValueError(f"b value {b} out of range [-128, 127]")
+        
+        return (L, a, b)
+    
+    elif fmt == "rgb":
+        if isinstance(sample.value, str):
+            parts = re.split(r'[,\s]+', sample.value.strip())
+            r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+        else:
+            r, g, b = int(sample.value[0]), int(sample.value[1]), int(sample.value[2])
+        
+        if not all(0 <= v <= 255 for v in [r, g, b]):
+            raise ValueError(f"RGB values must be in range [0, 255]")
+        
+        return rgb_to_lab(r, g, b)
+    
+    elif fmt == "hex":
+        hex_val = sample.value if isinstance(sample.value, str) else str(sample.value)
+        r, g, b = hex_to_rgb(hex_val)
+        return rgb_to_lab(r, g, b)
+    
+    elif fmt == "cmyk":
+        if isinstance(sample.value, str):
+            parts = re.split(r'[,\s]+', sample.value.strip())
+            c, m, y, k = float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])
+        else:
+            c, m, y, k = sample.value[0], sample.value[1], sample.value[2], sample.value[3]
+        
+        # Use LittleCMS for CMYK -> Lab conversion via GRACoL profile
+        try:
+            from PIL import ImageCms, Image as PilImage
+            
+            profile_path = sample.profile or "GRACoL2013.icc"
+            if "gracol" in profile_path.lower():
+                cmyk_profile_path = GRACOL_PROFILE_PATH
+            else:
+                cmyk_profile_path = GRACOL_PROFILE_PATH  # Default to GRACoL
+            
+            if not cmyk_profile_path.exists():
+                raise RuntimeError(f"CMYK profile not found: {cmyk_profile_path}")
+            
+            lab_profile = ImageCms.createProfile("LAB")
+            cmyk_profile = ImageCms.getOpenProfile(str(cmyk_profile_path))
+            
+            # CMYK 0-100 to 0-255
+            C_byte = int((c / 100.0) * 255)
+            M_byte = int((m / 100.0) * 255)
+            Y_byte = int((y / 100.0) * 255)
+            K_byte = int((k / 100.0) * 255)
+            
+            cmyk_img = PilImage.new("CMYK", (1, 1), (C_byte, M_byte, Y_byte, K_byte))
+            
+            transform = ImageCms.buildTransformFromOpenProfiles(
+                cmyk_profile,
+                lab_profile,
+                "CMYK",
+                "LAB",
+                renderingIntent=rendering_intent
+            )
+            
+            lab_img = ImageCms.applyTransform(cmyk_img, transform)
+            L_byte, a_byte, b_byte = lab_img.getpixel((0, 0))
+            
+            L = (L_byte / 255.0) * 100
+            a = a_byte - 128
+            b = b_byte - 128
+            
+            return (round(L, 2), round(a, 2), round(b, 2))
+            
+        except ImportError:
+            # Fallback: simple CMYK -> RGB -> Lab
+            r = int(255 * (1 - c / 100.0) * (1 - k / 100.0))
+            g = int(255 * (1 - m / 100.0) * (1 - k / 100.0))
+            b_val = int(255 * (1 - y / 100.0) * (1 - k / 100.0))
+            return rgb_to_lab(r, g, b_val)
+    
+    else:
+        raise ValueError(f"Unsupported color format: {fmt}")
+
+
+def calculate_lab_centroid(lab_values: List[tuple]) -> tuple:
+    """
+    Calculate the centroid (average) of Lab values.
+    """
+    if not lab_values:
+        raise ValueError("Cannot calculate centroid of empty list")
+    
+    n = len(lab_values)
+    L_avg = sum(lab[0] for lab in lab_values) / n
+    a_avg = sum(lab[1] for lab in lab_values) / n
+    b_avg = sum(lab[2] for lab in lab_values) / n
+    
+    return (round(L_avg, 2), round(a_avg, 2), round(b_avg, 2))
+
+
+@app.post("/color-consensus")
+def color_consensus(payload: ColorConsensusInput):
+    """
+    Calculate color consensus from multiple samples with outlier rejection.
+    
+    Features:
+    - Accepts mixed color formats (Lab, RGB, Hex, CMYK)
+    - Normalizes all inputs to Lab using ICC profiles
+    - Computes pairwise ΔE2000 comparisons
+    - Identifies and removes outliers
+    - Returns averaged consensus color
+    
+    Algorithm:
+    1. Normalize all inputs to Lab
+    2. Calculate initial centroid
+    3. Compute ΔE2000 from each sample to centroid
+    4. Remove outliers (ΔE2000 > threshold), keeping minimum 2 samples
+    5. Recalculate final consensus from remaining samples
+    """
+    try:
+        if len(payload.colors) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail="At least 2 color samples required for consensus calculation"
+            )
+        
+        # Step 1: Normalize all colors to Lab
+        normalized_samples = []
+        normalization_errors = []
+        
+        for i, sample in enumerate(payload.colors):
+            try:
+                lab = normalize_color_to_lab(sample, payload.rendering_intent)
+                
+                # Generate hex preview
+                r, g, b = lab_to_rgb(lab[0], lab[1], lab[2])
+                hex_color = rgb_to_hex(r, g, b)
+                
+                normalized_samples.append({
+                    "index": i,
+                    "label": sample.label or f"Sample {i + 1}",
+                    "original_format": sample.format,
+                    "original_value": sample.value,
+                    "lab": list(lab),
+                    "hex": hex_color
+                })
+            except Exception as e:
+                normalization_errors.append({
+                    "index": i,
+                    "label": sample.label or f"Sample {i + 1}",
+                    "error": str(e)
+                })
+        
+        if len(normalized_samples) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient valid samples after normalization. Errors: {normalization_errors}"
+            )
+        
+        # Step 2: Calculate pairwise ΔE2000 matrix
+        pairwise_results = []
+        if payload.include_pairwise:
+            for i, sample1 in enumerate(normalized_samples):
+                for j, sample2 in enumerate(normalized_samples):
+                    if i < j:  # Only upper triangle
+                        lab1 = tuple(sample1["lab"])
+                        lab2 = tuple(sample2["lab"])
+                        delta_e = calculate_delta_e_2000(lab1, lab2)
+                        
+                        pairwise_results.append({
+                            "sample1": sample1["label"],
+                            "sample2": sample2["label"],
+                            "deltaE2000": delta_e
+                        })
+        
+        # Step 3: Calculate initial centroid
+        lab_values = [tuple(s["lab"]) for s in normalized_samples]
+        initial_centroid = calculate_lab_centroid(lab_values)
+        
+        # Step 4: Calculate distance from each sample to centroid
+        for sample in normalized_samples:
+            lab = tuple(sample["lab"])
+            sample["deltaE_to_centroid"] = calculate_delta_e_2000(lab, initial_centroid)
+        
+        # Step 5: Identify outliers
+        threshold = payload.outlier_threshold
+        sorted_samples = sorted(normalized_samples, key=lambda x: x["deltaE_to_centroid"])
+        
+        # Keep at least 2 samples
+        min_samples = 2
+        included_samples = []
+        excluded_samples = []
+        
+        for sample in sorted_samples:
+            if sample["deltaE_to_centroid"] <= threshold or len(included_samples) < min_samples:
+                included_samples.append(sample)
+            else:
+                excluded_samples.append(sample)
+        
+        # Step 6: Recalculate final consensus from included samples
+        final_lab_values = [tuple(s["lab"]) for s in included_samples]
+        final_consensus = calculate_lab_centroid(final_lab_values)
+        
+        # Calculate final distances to consensus
+        for sample in included_samples:
+            sample["deltaE_to_consensus"] = calculate_delta_e_2000(
+                tuple(sample["lab"]), final_consensus
+            )
+        
+        for sample in excluded_samples:
+            sample["deltaE_to_consensus"] = calculate_delta_e_2000(
+                tuple(sample["lab"]), final_consensus
+            )
+        
+        # Generate consensus hex preview
+        consensus_hex = None
+        if payload.include_hex_preview:
+            r, g, b = lab_to_rgb(final_consensus[0], final_consensus[1], final_consensus[2])
+            consensus_hex = rgb_to_hex(r, g, b)
+        
+        # Check if consensus is stable
+        max_delta = max(s["deltaE_to_consensus"] for s in included_samples) if included_samples else 0
+        consensus_stable = max_delta <= threshold
+        
+        # Build response
+        response = {
+            "success": True,
+            "input_count": len(payload.colors),
+            "valid_count": len(normalized_samples),
+            "included_count": len(included_samples),
+            "excluded_count": len(excluded_samples),
+            
+            "consensus": {
+                "lab": list(final_consensus),
+                "hex": consensus_hex,
+                "stable": consensus_stable,
+                "max_deltaE": round(max_delta, 4)
+            },
+            
+            "samples": {
+                "included": [{
+                    "label": s["label"],
+                    "lab": s["lab"],
+                    "hex": s["hex"],
+                    "deltaE_to_consensus": round(s["deltaE_to_consensus"], 4)
+                } for s in included_samples],
+                
+                "excluded": [{
+                    "label": s["label"],
+                    "lab": s["lab"],
+                    "hex": s["hex"],
+                    "deltaE_to_consensus": round(s["deltaE_to_consensus"], 4),
+                    "reason": f"ΔE2000 ({s['deltaE_to_centroid']:.2f}) exceeds threshold ({threshold})"
+                } for s in excluded_samples]
+            },
+            
+            "settings": {
+                "outlier_threshold": threshold,
+                "rendering_intent": payload.rendering_intent,
+                "method": "CIEDE2000"
+            }
+        }
+        
+        if payload.include_pairwise:
+            response["pairwise_comparisons"] = pairwise_results
+        
+        if normalization_errors:
+            response["normalization_errors"] = normalization_errors
+        
+        if not consensus_stable:
+            response["warning"] = (
+                f"Consensus may be unreliable. Maximum ΔE2000 ({max_delta:.2f}) "
+                f"exceeds threshold ({threshold}). Consider reviewing input samples."
+            )
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Color consensus calculation failed: {str(e)}"
+        )
+
+
+@app.post("/color-compare")
+def color_compare(payload: dict):
+    """
+    Simple pairwise comparison of two colors using ΔE2000.
+    
+    Input:
+    {
+        "color1": {"format": "lab", "value": [50, 10, -20]},
+        "color2": {"format": "hex", "value": "#FF5733"}
+    }
+    """
+    try:
+        color1_data = payload.get("color1")
+        color2_data = payload.get("color2")
+        
+        if not color1_data or not color2_data:
+            raise HTTPException(status_code=400, detail="Both color1 and color2 required")
+        
+        sample1 = ColorSample(**color1_data)
+        sample2 = ColorSample(**color2_data)
+        
+        lab1 = normalize_color_to_lab(sample1)
+        lab2 = normalize_color_to_lab(sample2)
+        
+        delta_e = calculate_delta_e_2000(lab1, lab2)
+        
+        # Generate hex previews
+        r1, g1, b1 = lab_to_rgb(lab1[0], lab1[1], lab1[2])
+        r2, g2, b2 = lab_to_rgb(lab2[0], lab2[1], lab2[2])
+        
+        return {
+            "success": True,
+            "color1": {
+                "lab": list(lab1),
+                "hex": rgb_to_hex(r1, g1, b1)
+            },
+            "color2": {
+                "lab": list(lab2),
+                "hex": rgb_to_hex(r2, g2, b2)
+            },
+            "comparison": {
+                "deltaE": delta_e,
+                "method": "CIEDE2000",
+                "perceptual_difference": (
+                    "Imperceptible" if delta_e < 1.0 else
+                    "Barely perceptible" if delta_e < 2.0 else
+                    "Perceptible" if delta_e < 3.5 else
+                    "Obvious" if delta_e < 5.0 else
+                    "Very obvious"
+                )
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Color comparison failed: {str(e)}"
+        )
