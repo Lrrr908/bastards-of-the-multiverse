@@ -137,20 +137,23 @@ def gamut_check(payload: dict):
                 }
             }
             
+        except ImportError as e:
+            debug_info["error"] = str(e)
+            debug_info["error_type"] = type(e).__name__
+            raise HTTPException(
+                status_code=500, 
+                detail=f"LittleCMS (PIL/ImageCms) is required but not available: {str(e)}"
+            )
         except Exception as e:
             debug_info["error"] = str(e)
             debug_info["error_type"] = type(e).__name__
-            
-            return {
-                "gamut": {
-                    "inGamut": True,  # Fallback
-                    "profile": profile,
-                    "method": "fallback_range_check",
-                    "warning": f"LittleCMS failed: {str(e)}",
-                    "debug": debug_info
-                }
-            }
+            raise HTTPException(
+                status_code=500, 
+                detail=f"LittleCMS gamut check failed: {str(e)}"
+            )
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gamut check failed: {str(e)}")
 
@@ -213,14 +216,18 @@ def lcms_health():
     Confirm that color conversion is working and show which method.
     """
     try:
-        # Check if LittleCMS is available
+        # Check if LittleCMS is available (REQUIRED)
         try:
             from PIL import ImageCms
             method = "LittleCMS (Professional)"
             has_littlecms = True
         except ImportError:
-            method = "Pure Python (Fallback)"
-            has_littlecms = False
+            return {
+                "ok": False,
+                "error": "LittleCMS (PIL/ImageCms) is REQUIRED but not available",
+                "has_littlecms": False,
+                "method": "NONE - LittleCMS required"
+            }
         
         # Test a conversion
         test_lab = rgb_to_lab(255, 200, 69)
@@ -297,94 +304,38 @@ def rgb_to_lab(r: int, g: int, b: int) -> tuple:
     """
     Convert RGB to L*a*b* using LittleCMS library for professional accuracy.
     Returns (L, a, b) tuple.
+    
+    Raises:
+        ImportError: If PIL/LittleCMS is not available
+        RuntimeError: If LittleCMS conversion fails
     """
-    try:
-        from PIL import Image, ImageCms
-        
-        # Create an sRGB profile and Lab profile
-        srgb_profile = ImageCms.createProfile("sRGB")
-        lab_profile = ImageCms.createProfile("LAB")
-        
-        # Create transform from sRGB to Lab
-        transform = ImageCms.buildTransform(
-            srgb_profile,
-            lab_profile,
-            "RGB",
-            "LAB"
-        )
-        
-        # Create a 1x1 pixel image with the RGB color
-        img = Image.new("RGB", (1, 1), (r, g, b))
-        
-        # Apply the transform
-        lab_img = ImageCms.applyTransform(img, transform)
-        
-        # Get the Lab values
-        L, a, b_val = lab_img.getpixel((0, 0))
-        
-        # Convert from 0-255 range to proper Lab ranges
-        L = (L / 255.0) * 100
-        a = (a - 128)
-        b_val = (b_val - 128)
-        
-        return (round(L, 2), round(a, 2), round(b_val, 2))
-        
-    except ImportError:
-        # Fallback to pure Python if PIL/littlecms not available
-        return rgb_to_lab_python(r, g, b)
-    except Exception as e:
-        # Fallback on any error
-        print(f"LittleCMS conversion failed: {e}, using fallback")
-        return rgb_to_lab_python(r, g, b)
-
-
-def rgb_to_lab_python(r: int, g: int, b: int) -> tuple:
-    """
-    Fallback pure Python RGB to L*a*b* conversion.
-    Used if LittleCMS is not available.
-    Returns (L, a, b) tuple.
-    """
-    # Normalize RGB to 0-1
-    r_norm = r / 255.0
-    g_norm = g / 255.0
-    b_norm = b / 255.0
+    from PIL import Image, ImageCms
     
-    # Convert RGB to linear RGB
-    def to_linear(c):
-        if c <= 0.04045:
-            return c / 12.92
-        else:
-            return ((c + 0.055) / 1.055) ** 2.4
+    # Create an sRGB profile and Lab profile
+    srgb_profile = ImageCms.createProfile("sRGB")
+    lab_profile = ImageCms.createProfile("LAB")
     
-    r_lin = to_linear(r_norm)
-    g_lin = to_linear(g_norm)
-    b_lin = to_linear(b_norm)
+    # Create transform from sRGB to Lab
+    transform = ImageCms.buildTransform(
+        srgb_profile,
+        lab_profile,
+        "RGB",
+        "LAB"
+    )
     
-    # Convert linear RGB to XYZ (using sRGB/D65 matrix)
-    x = r_lin * 0.4124564 + g_lin * 0.3575761 + b_lin * 0.1804375
-    y = r_lin * 0.2126729 + g_lin * 0.7151522 + b_lin * 0.0721750
-    z = r_lin * 0.0193339 + g_lin * 0.1191920 + b_lin * 0.9503041
+    # Create a 1x1 pixel image with the RGB color
+    img = Image.new("RGB", (1, 1), (r, g, b))
     
-    # Normalize for D65 white point
-    x = x / 0.95047
-    y = y / 1.00000
-    z = z / 1.08883
+    # Apply the transform
+    lab_img = ImageCms.applyTransform(img, transform)
     
-    # Convert XYZ to Lab
-    def f(t):
-        delta = 6/29
-        if t > delta**3:
-            return t**(1/3)
-        else:
-            return t / (3 * delta**2) + 4/29
+    # Get the Lab values
+    L, a, b_val = lab_img.getpixel((0, 0))
     
-    fx = f(x)
-    fy = f(y)
-    fz = f(z)
-    
-    L = 116 * fy - 16
-    a = 500 * (fx - fy)
-    b_val = 200 * (fy - fz)
+    # Convert from 0-255 range to proper Lab ranges
+    L = (L / 255.0) * 100
+    a = (a - 128)
+    b_val = (b_val - 128)
     
     return (round(L, 2), round(a, 2), round(b_val, 2))
 
@@ -393,95 +344,45 @@ def lab_to_rgb(L: float, a: float, b: float) -> tuple:
     """
     Convert L*a*b* to RGB (0-255) using LittleCMS for professional accuracy.
     Returns (r, g, b) tuple.
+    
+    Raises:
+        ImportError: If PIL/LittleCMS is not available
+        RuntimeError: If LittleCMS conversion fails
     """
-    try:
-        from PIL import ImageCms, Image as PilImage
-        
-        # Create Lab and sRGB profiles
-        lab_profile = ImageCms.createProfile("LAB")
-        srgb_profile = ImageCms.createProfile("sRGB")
-        
-        # Create transform from Lab to sRGB
-        transform = ImageCms.buildTransform(
-            lab_profile,
-            srgb_profile,
-            "LAB",
-            "RGB"
-        )
-        
-        # Convert Lab values to 0-255 range
-        L_byte = int((L / 100.0) * 255)
-        a_byte = int(a + 128)
-        b_byte = int(b + 128)
-        
-        # Clamp to valid range
-        L_byte = max(0, min(255, L_byte))
-        a_byte = max(0, min(255, a_byte))
-        b_byte = max(0, min(255, b_byte))
-        
-        # Create a 1x1 pixel Lab image
-        lab_img = PilImage.new("LAB", (1, 1), (L_byte, a_byte, b_byte))
-        
-        # Apply the transform
-        rgb_img = ImageCms.applyTransform(lab_img, transform)
-        
-        # Get the RGB values
-        r, g, b_val = rgb_img.getpixel((0, 0))
-        
-        return (r, g, b_val)
-        
-    except ImportError:
-        # Fallback to pure Python if PIL/littlecms not available
-        return lab_to_rgb_python(L, a, b)
-    except Exception as e:
-        # Fallback on any error
-        print(f"LittleCMS conversion failed: {e}, using fallback")
-        return lab_to_rgb_python(L, a, b)
-
-
-def lab_to_rgb_python(L: float, a: float, b: float) -> tuple:
-    """
-    Convert L*a*b* to RGB (0-255).
-    Returns (r, g, b) tuple.
-    """
-    # Convert Lab to XYZ
-    fy = (L + 16) / 116
-    fx = a / 500 + fy
-    fz = fy - b / 200
+    from PIL import ImageCms, Image as PilImage
     
-    def f_inv(t):
-        delta = 6/29
-        if t > delta:
-            return t**3
-        else:
-            return 3 * delta**2 * (t - 4/29)
+    # Create Lab and sRGB profiles
+    lab_profile = ImageCms.createProfile("LAB")
+    srgb_profile = ImageCms.createProfile("sRGB")
     
-    x = f_inv(fx) * 0.95047
-    y = f_inv(fy) * 1.00000
-    z = f_inv(fz) * 1.08883
+    # Create transform from Lab to sRGB
+    transform = ImageCms.buildTransform(
+        lab_profile,
+        srgb_profile,
+        "LAB",
+        "RGB"
+    )
     
-    # Convert XYZ to linear RGB
-    r_lin = x * 3.2404542 + y * -1.5371385 + z * -0.4985314
-    g_lin = x * -0.9692660 + y * 1.8760108 + z * 0.0415560
-    b_lin = x * 0.0556434 + y * -0.2040259 + z * 1.0572252
+    # Convert Lab values to 0-255 range
+    L_byte = int((L / 100.0) * 255)
+    a_byte = int(a + 128)
+    b_byte = int(b + 128)
     
-    # Convert linear RGB to sRGB
-    def from_linear(c):
-        if c <= 0.0031308:
-            return 12.92 * c
-        else:
-            return 1.055 * (c ** (1/2.4)) - 0.055
+    # Clamp to valid range
+    L_byte = max(0, min(255, L_byte))
+    a_byte = max(0, min(255, a_byte))
+    b_byte = max(0, min(255, b_byte))
     
-    r_norm = from_linear(r_lin)
-    g_norm = from_linear(g_lin)
-    b_norm = from_linear(b_lin)
+    # Create a 1x1 pixel Lab image
+    lab_img = PilImage.new("LAB", (1, 1), (L_byte, a_byte, b_byte))
     
-    # Clamp to 0-255
-    r = max(0, min(255, int(round(r_norm * 255))))
-    g = max(0, min(255, int(round(g_norm * 255))))
-    b = max(0, min(255, int(round(b_norm * 255))))
+    # Apply the transform
+    rgb_img = ImageCms.applyTransform(lab_img, transform)
     
-    return (r, g, b)
+    # Get the RGB values
+    r, g, b_val = rgb_img.getpixel((0, 0))
+    
+    return (r, g, b_val)
 
 
 def calculate_delta_e(lab1: tuple, lab2: tuple) -> float:
@@ -918,26 +819,14 @@ def gamut_check(payload: dict):
                 }
             }
             
-        except Exception as e:
-            # Fallback to simple range check if LittleCMS fails
-            print(f"LittleCMS gamut check failed: {e}")
-            simple_in_gamut = (
-                0 <= L <= 100 and
-                -128 <= a <= 127 and
-                -128 <= b_val <= 127 and
-                abs(a) < 100 and
-                abs(b_val) < 100
+        except ImportError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"LittleCMS (PIL/ImageCms) is required but not available: {str(e)}"
             )
-            
-            return {
-                "gamut": {
-                    "inGamut": simple_in_gamut,
-                    "profile": profile,
-                    "method": "fallback_range_check",
-                    "warning": "LittleCMS unavailable, using basic range validation"
-                }
-            }
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -953,8 +842,8 @@ def gamut_check(payload: dict):
 def convert_color(payload: dict):
     """
     Universal color conversion endpoint.
-    Converts between different color spaces using LittleCMS
-    (or pure Python fallback).
+    Converts between different color spaces using LittleCMS.
+    LittleCMS is REQUIRED - no fallback to pure Python math.
 
     The harmony widget calls this like:
 
@@ -983,14 +872,9 @@ def convert_color(payload: dict):
             else:
                 cmyk_equiv = rgb_to_cmyk(r, g, b)
 
-            # UPDATED: Use real gamut checking instead of hardcoded True
-            try:
-                # Call our professional gamut check function
-                gamut_result = gamut_check({"lab": list(lab), "profile": profile_name})
-                gamut_info = gamut_result["gamut"]
-            except:
-                # Fallback to simple check if gamut check fails
-                gamut_info = {"inGamut": True}
+            # Use real gamut checking - no fallback
+            gamut_result = gamut_check({"lab": list(lab), "profile": profile_name})
+            gamut_info = gamut_result["gamut"]
 
             return {
                 "success": True,
@@ -1001,7 +885,7 @@ def convert_color(payload: dict):
                     "inGamut": gamut_info.get("inGamut", True),
                     "cmykEquivalent": cmyk_equiv,
                     "deltaE": gamut_info.get("deltaE"),
-                    "method": gamut_info.get("method", "convert_endpoint")
+                    "method": gamut_info.get("method", "LittleCMS")
                 }
             }
         
@@ -1023,14 +907,9 @@ def convert_color(payload: dict):
                 float(round(k, 1)),
             ]
             
-            # UPDATED: Use real gamut checking instead of hardcoded True
-            try:
-                # Call our professional gamut check function
-                gamut_result = gamut_check({"lab": list(lab), "profile": profile_name})
-                gamut_info = gamut_result["gamut"]
-            except:
-                # Fallback to simple check if gamut check fails
-                gamut_info = {"inGamut": True}
+            # Use real gamut checking - no fallback
+            gamut_result = gamut_check({"lab": list(lab), "profile": profile_name})
+            gamut_info = gamut_result["gamut"]
             
             return {
                 "success": True,
@@ -1042,7 +921,7 @@ def convert_color(payload: dict):
                     "inGamut": gamut_info.get("inGamut", True),
                     "cmykEquivalent": cmyk_equiv,
                     "deltaE": gamut_info.get("deltaE"),
-                    "method": gamut_info.get("method", "convert_endpoint")
+                    "method": gamut_info.get("method", "LittleCMS")
                 }
             }
         
@@ -1060,14 +939,9 @@ def convert_color(payload: dict):
             else:
                 cmyk_equiv = rgb_to_cmyk(r, g, b_val)
             
-            # UPDATED: Use real gamut checking instead of hardcoded True
-            try:
-                # Call our professional gamut check function
-                gamut_result = gamut_check({"lab": [L, a, b], "profile": profile_name})
-                gamut_info = gamut_result["gamut"]
-            except:
-                # Fallback to simple check if gamut check fails
-                gamut_info = {"inGamut": True}
+            # Use real gamut checking - no fallback
+            gamut_result = gamut_check({"lab": [L, a, b], "profile": profile_name})
+            gamut_info = gamut_result["gamut"]
             
             return {
                 "success": True,
@@ -1078,7 +952,7 @@ def convert_color(payload: dict):
                     "inGamut": gamut_info.get("inGamut", True),
                     "cmykEquivalent": cmyk_equiv,
                     "deltaE": gamut_info.get("deltaE"),
-                    "method": gamut_info.get("method", "convert_endpoint")
+                    "method": gamut_info.get("method", "LittleCMS")
                 }
             }
         
@@ -1676,12 +1550,8 @@ def normalize_color_to_lab(sample: ColorSample, rendering_intent: int = 1) -> tu
             
             return (round(L, 2), round(a, 2), round(b, 2))
             
-        except ImportError:
-            # Fallback: simple CMYK -> RGB -> Lab
-            r = int(255 * (1 - c / 100.0) * (1 - k / 100.0))
-            g = int(255 * (1 - m / 100.0) * (1 - k / 100.0))
-            b_val = int(255 * (1 - y / 100.0) * (1 - k / 100.0))
-            return rgb_to_lab(r, g, b_val)
+        except ImportError as e:
+            raise ImportError(f"LittleCMS (PIL/ImageCms) is required for CMYK conversion: {str(e)}")
     
     else:
         raise ValueError(f"Unsupported color format: {fmt}")
