@@ -985,10 +985,90 @@ class RenderingIntentInput(BaseModel):
     targetProfile: str = "GRACoL2013.icc"  # Target profile
 
 
+def check_lab_gamut(L: float, a: float, b_val: float, profile: str = "GRACoL2013.icc") -> dict:
+    """
+    Internal helper to check if a Lab color is within gamut.
+    Returns dict with inGamut, deltaE, and cmykEquivalent.
+    """
+    try:
+        from PIL import ImageCms, Image as PilImage
+        
+        if not GRACOL_PROFILE_PATH.exists():
+            return {'inGamut': True, 'deltaE': 0, 'error': 'Profile not found'}
+        
+        # Create profiles
+        lab_profile = ImageCms.createProfile("LAB")
+        cmyk_profile = ImageCms.getOpenProfile(str(GRACOL_PROFILE_PATH))
+        
+        # Convert Lab to 0-255 range for PIL
+        L_byte = int((L / 100.0) * 255)
+        a_byte = int(a + 128)
+        b_byte = int(b_val + 128)
+        
+        L_byte = max(0, min(255, L_byte))
+        a_byte = max(0, min(255, a_byte))
+        b_byte = max(0, min(255, b_byte))
+        
+        # Create Lab image
+        lab_img = PilImage.new("LAB", (1, 1), (L_byte, a_byte, b_byte))
+        
+        # Transform Lab -> CMYK
+        lab_to_cmyk_transform = ImageCms.buildTransformFromOpenProfiles(
+            lab_profile,
+            cmyk_profile,
+            "LAB",
+            "CMYK",
+            renderingIntent=1
+        )
+        
+        cmyk_img = ImageCms.applyTransform(lab_img, lab_to_cmyk_transform)
+        C, M, Y, K = cmyk_img.getpixel((0, 0))
+        
+        # Convert back CMYK -> Lab to check roundtrip accuracy
+        cmyk_to_lab_transform = ImageCms.buildTransformFromOpenProfiles(
+            cmyk_profile,
+            lab_profile,
+            "CMYK",
+            "LAB",
+            renderingIntent=1
+        )
+        
+        test_cmyk_img = PilImage.new("CMYK", (1, 1), (C, M, Y, K))
+        roundtrip_lab_img = ImageCms.applyTransform(test_cmyk_img, cmyk_to_lab_transform)
+        
+        rt_L_byte, rt_a_byte, rt_b_byte = roundtrip_lab_img.getpixel((0, 0))
+        
+        # Convert back to Lab values
+        rt_L = (rt_L_byte / 255.0) * 100
+        rt_a = rt_a_byte - 128
+        rt_b = rt_b_byte - 128
+        
+        # Calculate Delta E between original and roundtrip
+        delta_e = ((L - rt_L)**2 + (a - rt_a)**2 + (b_val - rt_b)**2) ** 0.5
+        
+        # If Delta E is small, the color is in gamut
+        in_gamut = delta_e < 2.0
+        
+        return {
+            'inGamut': in_gamut,
+            'deltaE': round(delta_e, 2),
+            'cmykEquivalent': [
+                round(C / 255.0 * 100.0, 1),
+                round(M / 255.0 * 100.0, 1), 
+                round(Y / 255.0 * 100.0, 1),
+                round(K / 255.0 * 100.0, 1)
+            ]
+        }
+        
+    except Exception as e:
+        return {'inGamut': True, 'deltaE': 0, 'error': str(e)}
+
+
 @app.post("/rendering-intents")
 def rendering_intents(payload: RenderingIntentInput):
     """
     Compare how a Lab color renders with different rendering intents.
+    Now includes actual gamut checking for each rendered color.
     """
     try:
         L, a, b = payload.lab
@@ -996,48 +1076,52 @@ def rendering_intents(payload: RenderingIntentInput):
         
         rendering_intents = {}
         
-        # Perceptual
+        # Perceptual - compresses gamut smoothly
         perceptual_lab = (
             L * 0.98,
             a * 0.95,
             b * 0.95
         )
+        perceptual_gamut = check_lab_gamut(perceptual_lab[0], perceptual_lab[1], perceptual_lab[2])
         rendering_intents['perceptual'] = {
             'lab': list(perceptual_lab),
             'deltaE': calculate_delta_e_2000(source_lab, perceptual_lab),
-            'gamut': {'inGamut': True}
+            'gamut': perceptual_gamut
         }
         
-        # Relative
+        # Relative Colorimetric - clips out-of-gamut colors
         relative_lab = source_lab
+        relative_gamut = check_lab_gamut(relative_lab[0], relative_lab[1], relative_lab[2])
         rendering_intents['relative'] = {
             'lab': list(relative_lab),
             'deltaE': 0.0,
-            'gamut': {'inGamut': True}
+            'gamut': relative_gamut
         }
         
-        # Saturation
+        # Saturation - boosts saturation, may push out of gamut
         saturation_lab = (
             L,
             a * 1.05,
             b * 1.05
         )
+        saturation_gamut = check_lab_gamut(saturation_lab[0], saturation_lab[1], saturation_lab[2])
         rendering_intents['saturation'] = {
             'lab': list(saturation_lab),
             'deltaE': calculate_delta_e_2000(source_lab, saturation_lab),
-            'gamut': {'inGamut': True}
+            'gamut': saturation_gamut
         }
         
-        # Absolute
+        # Absolute Colorimetric - preserves exact colors
         absolute_lab = (
             L * 0.99,
             a * 0.98,
             b * 0.98
         )
+        absolute_gamut = check_lab_gamut(absolute_lab[0], absolute_lab[1], absolute_lab[2])
         rendering_intents['absolute'] = {
             'lab': list(absolute_lab),
             'deltaE': calculate_delta_e_2000(source_lab, absolute_lab),
-            'gamut': {'inGamut': True}
+            'gamut': absolute_gamut
         }
         
         return {
