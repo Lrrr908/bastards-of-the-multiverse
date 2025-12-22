@@ -1806,11 +1806,19 @@ def color_consensus(payload: ColorConsensusInput):
                 tuple(sample["lab"]), final_consensus
             )
         
-        # Generate consensus hex preview
+        # Generate consensus hex preview AND the Lab that corresponds to that hex
+        # This ensures Lab and Hex are consistent (typing the hex into Color Search gives same Lab)
         consensus_hex = None
+        display_lab = final_consensus  # Default to averaged Lab
+        
         if payload.include_hex_preview:
+            # Convert averaged Lab → RGB → Hex
             r, g, b = lab_to_rgb(final_consensus[0], final_consensus[1], final_consensus[2])
             consensus_hex = rgb_to_hex(r, g, b)
+            
+            # IMPORTANT: Convert the RGB back to Lab to get the "display Lab"
+            # This ensures the displayed Lab matches what you'd get if you typed the hex into Color Search
+            display_lab = rgb_to_lab(r, g, b)
         
         # Check if consensus is stable
         max_delta = max(s["deltaE_to_consensus"] for s in included_samples) if included_samples else 0
@@ -1825,7 +1833,8 @@ def color_consensus(payload: ColorConsensusInput):
             "excluded_count": len(excluded_samples),
             
             "consensus": {
-                "lab": list(final_consensus),
+                "lab": list(display_lab),  # Lab that matches the displayed hex
+                "lab_averaged": list(final_consensus),  # Original averaged Lab (for reference)
                 "hex": consensus_hex,
                 "stable": consensus_stable,
                 "max_deltaE": round(max_delta, 4)
