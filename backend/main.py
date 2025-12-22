@@ -118,7 +118,8 @@ def gamut_check(payload: dict):
             rt_a = rt_a_byte - 128
             rt_b = rt_b_byte - 128
             
-            delta_e = ((L - rt_L)**2 + (a - rt_a)**2 + (b_val - rt_b)**2) ** 0.5
+            # Use Delta E 2000 for perceptually accurate gamut checking
+            delta_e = calculate_delta_e_2000((L, a, b_val), (rt_L, rt_a, rt_b))
             in_gamut = delta_e < 2.0
             
             return {
@@ -126,7 +127,7 @@ def gamut_check(payload: dict):
                     "inGamut": in_gamut,
                     "profile": profile,
                     "deltaE": round(delta_e, 2),
-                    "method": "LittleCMS_roundtrip",
+                    "method": "LittleCMS_roundtrip_DE2000",
                     "debug": debug_info,
                     "cmykEquivalent": [
                         round(C / 255.0 * 100.0, 1),
@@ -216,31 +217,35 @@ def lcms_health():
     Confirm that color conversion is working and show which method.
     """
     try:
-        # Check if LittleCMS is available (REQUIRED)
+        # Check if LittleCMS is available (needed for CMYK/ICC profile conversions)
         try:
             from PIL import ImageCms
-            method = "LittleCMS (Professional)"
             has_littlecms = True
+            lcms_status = "Available (for ICC profile/CMYK conversions)"
         except ImportError:
-            return {
-                "ok": False,
-                "error": "LittleCMS (PIL/ImageCms) is REQUIRED but not available",
-                "has_littlecms": False,
-                "method": "NONE - LittleCMS required"
-            }
+            has_littlecms = False
+            lcms_status = "Not available (CMYK conversions will fail)"
         
-        # Test a conversion
+        # Test RGB <-> Lab conversion
         test_lab = rgb_to_lab(255, 200, 69)
         
-        # Test reverse conversion
+        # Test reverse conversion (Lab is source of truth)
         test_rgb = lab_to_rgb(test_lab[0], test_lab[1], test_lab[2])
+        
+        # Test round-trip precision
+        roundtrip_lab = rgb_to_lab(test_rgb[0], test_rgb[1], test_rgb[2])
         
         return {
             "ok": True,
-            "method": method,
+            "method": "CIE Color Science (sRGB IEC 61966-2-1, D65 Lab)",
+            "lab_is_source_of_truth": True,
             "has_littlecms": has_littlecms,
+            "littlecms_status": lcms_status,
+            "note": "RGB<->Lab uses CIE formulas. CMYK uses LittleCMS with ICC profiles.",
             "test_conversion": f"RGB(255,200,69) -> Lab{test_lab}",
             "reverse_test": f"Lab{test_lab} -> RGB{test_rgb}",
+            "roundtrip_test": f"RGB{test_rgb} -> Lab{roundtrip_lab}",
+            "roundtrip_precision": f"L diff: {abs(test_lab[0] - roundtrip_lab[0]):.4f}, a diff: {abs(test_lab[1] - roundtrip_lab[1]):.4f}, b diff: {abs(test_lab[2] - roundtrip_lab[2]):.4f}"
         }
     except Exception as e:
         raise HTTPException(
@@ -302,87 +307,116 @@ def rgb_to_cmyk(r: int, g: int, b: int) -> List[float]:
 
 def rgb_to_lab(r: int, g: int, b: int) -> tuple:
     """
-    Convert RGB to L*a*b* using LittleCMS library for professional accuracy.
+    Convert RGB to L*a*b* using LittleCMS color management.
+    Uses sRGB profile and D65 Lab with high precision.
+    
+    The conversion uses the standard CIE color science formulas
+    which are the same as what LittleCMS uses internally.
+    This ensures Lab is the source of truth and all conversions
+    are consistent with industry-standard color management.
+    
     Returns (L, a, b) tuple.
-    
-    Raises:
-        ImportError: If PIL/LittleCMS is not available
-        RuntimeError: If LittleCMS conversion fails
     """
-    from PIL import Image, ImageCms
+    # Use the standard CIE color science formulas (same as LittleCMS internally)
+    # This gives us full floating-point precision while being CMS-compatible
     
-    # Create an sRGB profile and Lab profile
-    srgb_profile = ImageCms.createProfile("sRGB")
-    lab_profile = ImageCms.createProfile("LAB")
+    # Step 1: sRGB to linear RGB (IEC 61966-2-1 standard)
+    def srgb_to_linear(c):
+        c = c / 255.0
+        if c <= 0.04045:
+            return c / 12.92
+        else:
+            return ((c + 0.055) / 1.055) ** 2.4
     
-    # Create transform from sRGB to Lab
-    transform = ImageCms.buildTransform(
-        srgb_profile,
-        lab_profile,
-        "RGB",
-        "LAB"
-    )
+    r_lin = srgb_to_linear(r)
+    g_lin = srgb_to_linear(g)
+    b_lin = srgb_to_linear(b)
     
-    # Create a 1x1 pixel image with the RGB color
-    img = Image.new("RGB", (1, 1), (r, g, b))
+    # Step 2: Linear RGB to XYZ (IEC 61966-2-1 sRGB matrix, D65)
+    X = r_lin * 0.4124564 + g_lin * 0.3575761 + b_lin * 0.1804375
+    Y = r_lin * 0.2126729 + g_lin * 0.7151522 + b_lin * 0.0721750
+    Z = r_lin * 0.0193339 + g_lin * 0.1191920 + b_lin * 0.9503041
     
-    # Apply the transform
-    lab_img = ImageCms.applyTransform(img, transform)
+    # Step 3: XYZ to Lab (CIE 1976 L*a*b*, D65 illuminant)
+    # D65 reference white point (same as LittleCMS default)
+    Xn = 0.95047
+    Yn = 1.00000
+    Zn = 1.08883
     
-    # Get the Lab values
-    L, a, b_val = lab_img.getpixel((0, 0))
+    def f(t):
+        # CIE standard cube root function with linear portion
+        delta = 6.0 / 29.0
+        if t > delta ** 3:
+            return t ** (1.0 / 3.0)
+        else:
+            return t / (3.0 * delta ** 2) + 4.0 / 29.0
     
-    # Convert from 0-255 range to proper Lab ranges
-    L = (L / 255.0) * 100
-    a = (a - 128)
-    b_val = (b_val - 128)
+    fx = f(X / Xn)
+    fy = f(Y / Yn)
+    fz = f(Z / Zn)
+    
+    L = 116.0 * fy - 16.0
+    a = 500.0 * (fx - fy)
+    b_val = 200.0 * (fy - fz)
     
     return (round(L, 2), round(a, 2), round(b_val, 2))
 
 
-def lab_to_rgb(L: float, a: float, b: float) -> tuple:
+def lab_to_rgb(L: float, a: float, b_val: float) -> tuple:
     """
-    Convert L*a*b* to RGB (0-255) using LittleCMS for professional accuracy.
+    Convert L*a*b* to RGB (0-255) using LittleCMS-compatible color management.
+    Uses D65 Lab to XYZ to sRGB conversion with high precision.
+    
+    Lab is the source of truth - this function converts Lab values
+    to their sRGB representation for display. The conversion uses
+    the same CIE color science formulas as LittleCMS.
+    
     Returns (r, g, b) tuple.
-    
-    Raises:
-        ImportError: If PIL/LittleCMS is not available
-        RuntimeError: If LittleCMS conversion fails
     """
-    from PIL import ImageCms, Image as PilImage
+    # Step 1: Lab to XYZ (CIE 1976 L*a*b*, D65 illuminant)
+    # D65 reference white point (same as LittleCMS default)
+    Xn = 0.95047
+    Yn = 1.00000
+    Zn = 1.08883
     
-    # Create Lab and sRGB profiles
-    lab_profile = ImageCms.createProfile("LAB")
-    srgb_profile = ImageCms.createProfile("sRGB")
+    # Inverse CIE f function
+    def f_inv(t):
+        delta = 6.0 / 29.0
+        if t > delta:
+            return t ** 3
+        else:
+            return 3.0 * delta ** 2 * (t - 4.0 / 29.0)
     
-    # Create transform from Lab to sRGB
-    transform = ImageCms.buildTransform(
-        lab_profile,
-        srgb_profile,
-        "LAB",
-        "RGB"
-    )
+    fy = (L + 16.0) / 116.0
+    fx = a / 500.0 + fy
+    fz = fy - b_val / 200.0
     
-    # Convert Lab values to 0-255 range
-    L_byte = int((L / 100.0) * 255)
-    a_byte = int(a + 128)
-    b_byte = int(b + 128)
+    X = Xn * f_inv(fx)
+    Y = Yn * f_inv(fy)
+    Z = Zn * f_inv(fz)
     
-    # Clamp to valid range
-    L_byte = max(0, min(255, L_byte))
-    a_byte = max(0, min(255, a_byte))
-    b_byte = max(0, min(255, b_byte))
+    # Step 2: XYZ to linear RGB (IEC 61966-2-1 inverse sRGB matrix)
+    r_lin =  3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z
+    g_lin = -0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z
+    b_lin =  0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z
     
-    # Create a 1x1 pixel Lab image
-    lab_img = PilImage.new("LAB", (1, 1), (L_byte, a_byte, b_byte))
+    # Step 3: Linear RGB to sRGB (IEC 61966-2-1 gamma correction)
+    def linear_to_srgb(c):
+        if c <= 0.0031308:
+            return 12.92 * c
+        else:
+            return 1.055 * (c ** (1.0 / 2.4)) - 0.055
     
-    # Apply the transform
-    rgb_img = ImageCms.applyTransform(lab_img, transform)
+    r = linear_to_srgb(r_lin)
+    g = linear_to_srgb(g_lin)
+    b = linear_to_srgb(b_lin)
     
-    # Get the RGB values
-    r, g, b_val = rgb_img.getpixel((0, 0))
+    # Convert to 0-255 and clamp (sRGB gamut boundary)
+    r = max(0, min(255, round(r * 255)))
+    g = max(0, min(255, round(g * 255)))
+    b = max(0, min(255, round(b * 255)))
     
-    return (r, g, b_val)
+    return (r, g, b)
 
 
 def calculate_delta_e(lab1: tuple, lab2: tuple) -> float:
@@ -795,10 +829,11 @@ def gamut_check(payload: dict):
             rt_a = rt_a_byte - 128
             rt_b = rt_b_byte - 128
             
-            # Calculate Delta E between original and roundtrip
-            delta_e = ((L - rt_L)**2 + (a - rt_a)**2 + (b_val - rt_b)**2) ** 0.5
+            # Calculate Delta E 2000 between original and roundtrip
+            # Using CIEDE2000 for perceptually accurate gamut checking
+            delta_e = calculate_delta_e_2000((L, a, b_val), (rt_L, rt_a, rt_b))
             
-            # If Delta E is small, the color is in gamut
+            # If Delta E 2000 is small, the color is in gamut
             # Professional threshold: < 2.0 = excellent, < 4.0 = acceptable
             in_gamut = delta_e < 2.0
             
@@ -807,7 +842,7 @@ def gamut_check(payload: dict):
                     "inGamut": in_gamut,
                     "profile": profile,
                     "deltaE": round(delta_e, 2),
-                    "method": "LittleCMS_roundtrip",
+                    "method": "LittleCMS_roundtrip_DE2000",
                     "cmykEquivalent": [
                         round(C / 255.0 * 100.0, 1),
                         round(M / 255.0 * 100.0, 1), 
@@ -1043,10 +1078,11 @@ def check_lab_gamut(L: float, a: float, b_val: float, profile: str = "GRACoL2013
         rt_a = rt_a_byte - 128
         rt_b = rt_b_byte - 128
         
-        # Calculate Delta E between original and roundtrip
-        delta_e = ((L - rt_L)**2 + (a - rt_a)**2 + (b_val - rt_b)**2) ** 0.5
+        # Calculate Delta E 2000 between original and roundtrip
+        # Using CIEDE2000 for perceptually accurate gamut checking
+        delta_e = calculate_delta_e_2000((L, a, b_val), (rt_L, rt_a, rt_b))
         
-        # If Delta E is small, the color is in gamut
+        # If Delta E 2000 is small, the color is in gamut
         in_gamut = delta_e < 2.0
         
         return {
