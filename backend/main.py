@@ -2792,20 +2792,20 @@ async def export_ase(payload: dict):
     Export color library to Adobe Swatch Exchange (.ase) format
     ASE files can be imported into Photoshop, Illustrator, InDesign, etc.
     
-    Uses HSB (Hue, Saturation, Brightness) color space (best Lab conversion):
-    - Converts Lab(D50) → sRGB → HSB pipeline
-    - HSB is Adobe's native color picker format
-    - Avoids gamut clipping issues inherent in RGB
-    - Preserves perceptual color relationships better than RGB or Lab in ASE
-    - Highly compatible with all Adobe applications
+    Uses Lab color space with Spot color type (device-independent):
+    - Exports raw Lab(D50) values from spectrophotometer data
+    - Colors are marked as Spot colors (type = 1) for proper Lab handling in Adobe apps
+    - Device-independent: Adobe apps convert Lab→RGB/CMYK using their color settings
+    - Preserves spectrophotometer accuracy without gamut conversion
+    - Lab values normalized to 0.0-1.0 range for ASE format
     
-    Note: RGB, CMYK, and Lab modes are also supported via the color_mode parameter,
-    but HSB is the default and recommended mode for Lab→Adobe workflows.
+    Note: RGB, CMYK, and HSB modes are also supported via the color_mode parameter,
+    but Lab (Spot) is the default for spectrophotometer-based color data.
     """
     try:
         library_name = payload.get('library_name', 'Color Library')
         colors = payload.get('colors', [])
-        color_mode = payload.get('color_mode', 'hsb').lower()  # Default to 'hsb' (best conversion from Lab)
+        color_mode = payload.get('color_mode', 'lab').lower()  # Default to 'lab' for spot colors
         
         if not colors:
             raise HTTPException(status_code=400, detail="No colors provided")
@@ -2943,6 +2943,9 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             output.write(struct.pack('>f', a_normalized))  # a (4 bytes): 0.0 to 1.0 (mapped from -128 to +127)
             output.write(struct.pack('>f', b_normalized))  # b (4 bytes): 0.0 to 1.0 (mapped from -128 to +127)
             
+            # Color type: 1 = Spot (Lab colors should be Spot colors for proper handling)
+            output.write(struct.pack('>H', 1))  # Spot color
+            
         elif color_mode == 'cmyk':
             # Convert Lab(D50) to CMYK using LittleCMS with GRACoL
             cmyk_values = lab_to_cmyk_via_gracol(lab[0], lab[1], lab[2])
@@ -2982,6 +2985,9 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             output.write(struct.pack('>f', y_value))  # Y (4 bytes)
             output.write(struct.pack('>f', k_value))  # K (4 bytes)
             
+            # Color type: 2 = Normal (CMYK colors are typically Normal)
+            output.write(struct.pack('>H', 2))  # Normal color
+            
         elif color_mode == 'hsb':
             # Convert Lab(D50) to HSB (Hue, Saturation, Brightness)
             H, S, B = lab_to_hsb(lab[0], lab[1], lab[2])
@@ -3013,6 +3019,9 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             output.write(struct.pack('>f', h_value))  # H (4 bytes): 0.0-1.0
             output.write(struct.pack('>f', s_value))  # S (4 bytes): 0.0-1.0
             output.write(struct.pack('>f', b_value))  # B (4 bytes): 0.0-1.0
+            
+            # Color type: 2 = Normal (HSB colors are typically Normal)
+            output.write(struct.pack('>H', 2))  # Normal color
             
         else:  # RGB mode (default)
             # Convert Lab(D50) to RGB
@@ -3048,9 +3057,9 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             output.write(struct.pack('>f', r_value))  # R (4 bytes)
             output.write(struct.pack('>f', g_value))  # G (4 bytes)
             output.write(struct.pack('>f', b_value))  # B (4 bytes)
-        
-        # Color type: 0 = Global, 1 = Spot, 2 = Normal (2 bytes)
-        output.write(struct.pack('>H', 2))  # Normal color
+            
+            # Color type: 2 = Normal (RGB colors are typically Normal)
+            output.write(struct.pack('>H', 2))  # Normal color
     
     return output.getvalue()
 
