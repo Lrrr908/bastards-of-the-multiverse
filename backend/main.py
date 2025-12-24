@@ -2822,7 +2822,16 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
     
     # Color Blocks
     for color in colors:
-        lab = color.get('lab', [50, 0, 0])
+        # Handle both data formats:
+        # Format 1: {name, L, a, b} (frontend format)
+        # Format 2: {name, lab: [L, a, b]} (legacy format)
+        if 'lab' in color:
+            lab = color['lab']
+        elif 'L' in color and 'a' in color and 'b' in color:
+            lab = [color['L'], color['a'], color['b']]
+        else:
+            lab = [50, 0, 0]  # Default grey
+        
         name = color.get('name', 'Unnamed Color')
         
         # DEBUG: Log what we're receiving
@@ -2971,7 +2980,16 @@ def create_cxf_file(library_name: str, colors: list) -> str:
     
     # Add each color
     for idx, color in enumerate(colors, 1):
-        lab = color.get('lab', [50, 0, 0])
+        # Handle both data formats:
+        # Format 1: {name, L, a, b} (frontend format)
+        # Format 2: {name, lab: [L, a, b]} (legacy format)
+        if 'lab' in color:
+            lab = color['lab']
+        elif 'L' in color and 'a' in color and 'b' in color:
+            lab = [color['L'], color['a'], color['b']]
+        else:
+            lab = [50, 0, 0]  # Default grey
+        
         name = color.get('name', f'Color {idx}')
         
         # Escape XML special characters
