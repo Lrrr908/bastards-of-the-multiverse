@@ -171,6 +171,7 @@ scipy>=1.7.0              # Optimization, statistics
 from pathlib import Path
 import re
 import math
+import xml.etree.ElementTree as ET
 from typing import Optional, List, Dict
 
 from fastapi import FastAPI, HTTPException, Query, UploadFile, File
@@ -2335,179 +2336,402 @@ def color_compare(payload: dict):
 # This parser handles multiple CXF versions:
 #   - CxF/X-4 (ISO 17972-4) with Header element
 #   - CxF3-core (older format)
+#   - CxF2 (legacy)
+#   - X-Rite proprietary variations
+#   - Pantone CXF exports
 #   - Various namespace variations
 # -------------------------------------------------
 
-import xml.etree.ElementTree as ET
-import re
-
 def parse_cxf_xml(content: bytes) -> dict:
     """
-    Parse CXF file using raw XML parsing.
-    Handles multiple CXF versions and namespace variations.
+    Parse CXF file using robust XML parsing.
+    Handles multiple CXF versions, namespaces, and format variations.
+    
+    Supported formats:
+    - CxF/X-4 (ISO 17972-4)
+    - CxF3-core
+    - CxF2
+    - X-Rite proprietary
+    - Pantone exports
     """
-    # Decode content
-    try:
-        xml_str = content.decode('utf-8')
-    except UnicodeDecodeError:
-        xml_str = content.decode('latin-1')
+    # Try multiple encodings
+    xml_str = None
+    for encoding in ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252', 'iso-8859-1']:
+        try:
+            xml_str = content.decode(encoding)
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    
+    if xml_str is None:
+        raise ValueError("Could not decode CXF file with any known encoding")
+    
+    # Remove BOM if present
+    xml_str = xml_str.lstrip('\ufeff')
+    
+    # Strip XML declaration issues (some files have malformed declarations)
+    xml_str = re.sub(r'<\?xml[^?]*\?>', '', xml_str, count=1).strip()
+    xml_str = '<?xml version="1.0" encoding="UTF-8"?>' + xml_str
     
     # Parse XML
-    root = ET.fromstring(xml_str)
+    try:
+        root = ET.fromstring(xml_str)
+    except ET.ParseError:
+        # Try removing problematic characters
+        xml_str = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', xml_str)
+        root = ET.fromstring(xml_str)
     
-    # Common CXF namespaces
-    namespaces = {
-        'cxf': 'http://colorexchangeformat.com/CxF3-core',
-        'cxf4': 'http://www.color.org/CxF/X-4',
-        'xsi': 'http://www.w3.org/2001/XMLSchema-instance'
+    # Collect ALL namespaces used in the document
+    all_namespaces = set()
+    for elem in root.iter():
+        if elem.tag.startswith('{'):
+            ns = elem.tag.split('}')[0] + '}'
+            all_namespaces.add(ns)
+    
+    # Known CXF namespaces (add more as discovered)
+    known_namespaces = {
+        '{http://colorexchangeformat.com/CxF3-core}',
+        '{http://www.color.org/CxF/X-4}',
+        '{http://www.xrite.com/cxf}',
+        '{http://www.color.org/CxF3-core}',
+        '{http://colorexchangeformat.com/CxF2}',
+        '{http://www.pantone.com/cxf}',
     }
-    
-    # Extract namespace from root if present
-    root_ns = ''
-    if root.tag.startswith('{'):
-        root_ns = root.tag.split('}')[0] + '}'
+    all_namespaces.update(known_namespaces)
     
     colors = []
     file_info = {}
+    debug_info = {
+        'namespaces_found': list(all_namespaces),
+        'root_tag': root.tag,
+        'elements_searched': []
+    }
     
-    # Helper to find elements with various namespace prefixes
-    def find_all(parent, *tag_names):
+    def find_elements_multi_ns(parent, *tag_names):
+        """Find elements trying all namespace variations."""
         results = []
         for tag in tag_names:
-            # Try without namespace
+            # Without namespace
             results.extend(parent.findall(f".//{tag}"))
-            # Try with detected namespace
-            if root_ns:
-                results.extend(parent.findall(f".//{root_ns}{tag}"))
-            # Try with known namespaces
-            for ns_prefix, ns_uri in namespaces.items():
-                results.extend(parent.findall(f".//{{{ns_uri}}}{tag}"))
-        return results
+            # Direct children without namespace
+            results.extend(parent.findall(f"./{tag}"))
+            # With each known namespace
+            for ns in all_namespaces:
+                results.extend(parent.findall(f".//{ns}{tag}"))
+                results.extend(parent.findall(f"./{ns}{tag}"))
+        # Remove duplicates while preserving order
+        seen = set()
+        unique = []
+        for elem in results:
+            elem_id = id(elem)
+            if elem_id not in seen:
+                seen.add(elem_id)
+                unique.append(elem)
+        return unique
     
     def find_one(parent, *tag_names):
-        results = find_all(parent, *tag_names)
+        results = find_elements_multi_ns(parent, *tag_names)
         return results[0] if results else None
     
     def get_text(elem):
-        return elem.text.strip() if elem is not None and elem.text else None
+        if elem is None:
+            return None
+        # Get all text content including from child elements
+        text = elem.text or ''
+        for child in elem:
+            if child.tail:
+                text += child.tail
+        text = text.strip()
+        return text if text else None
     
     def get_attr(elem, *attr_names):
+        """Get attribute trying multiple name variations."""
         if elem is None:
             return None
         for attr in attr_names:
+            # Try exact match
             if attr in elem.attrib:
                 return elem.attrib[attr]
+            # Try case-insensitive
+            for key, val in elem.attrib.items():
+                if key.lower() == attr.lower():
+                    return val
         return None
     
-    # Extract file info
-    header = find_one(root, 'Header', 'FileInformation')
-    if header is not None:
-        file_info['creator'] = get_text(find_one(header, 'Creator'))
-        file_info['description'] = get_text(find_one(header, 'Description', 'Name'))
-        file_info['creation_date'] = get_text(find_one(header, 'CreationDate'))
+    def parse_number(value):
+        """Parse a number from string, handling various formats."""
+        if value is None:
+            return None
+        try:
+            # Remove any whitespace
+            value = str(value).strip()
+            # Handle comma as decimal separator
+            value = value.replace(',', '.')
+            # Remove any units or extra characters
+            value = re.sub(r'[^\d.\-+eE]', '', value)
+            return float(value)
+        except (ValueError, TypeError):
+            return None
     
-    # Find all color objects - try multiple element names
-    objects = find_all(root, 'Object', 'Color', 'ColorObject', 'Sample')
+    def extract_lab_values(elem):
+        """Extract Lab values from an element using multiple strategies."""
+        if elem is None:
+            return None
+        
+        L, a, b = None, None, None
+        
+        # Strategy 1: Attributes (L="50" a="10" b="-5")
+        L = parse_number(get_attr(elem, 'L', 'l', 'Lightness', 'L*'))
+        a = parse_number(get_attr(elem, 'a', 'A', 'a*'))
+        b = parse_number(get_attr(elem, 'b', 'B', 'b*'))
+        
+        # Strategy 2: Child elements (<L>50</L><a>10</a><b>-5</b>)
+        if L is None:
+            L = parse_number(get_text(find_one(elem, 'L', 'Lightness', 'L_star')))
+        if a is None:
+            a = parse_number(get_text(find_one(elem, 'a', 'A', 'a_star')))
+        if b is None:
+            b = parse_number(get_text(find_one(elem, 'b', 'B', 'b_star')))
+        
+        # Strategy 3: Space/comma separated text ("50 10 -5" or "50,10,-5")
+        if L is None and elem.text:
+            text = elem.text.strip()
+            # Try space separation
+            parts = text.split()
+            if len(parts) >= 3:
+                L = parse_number(parts[0])
+                a = parse_number(parts[1])
+                b = parse_number(parts[2])
+            else:
+                # Try comma separation
+                parts = text.split(',')
+                if len(parts) >= 3:
+                    L = parse_number(parts[0])
+                    a = parse_number(parts[1])
+                    b = parse_number(parts[2])
+        
+        # Strategy 4: Look for ColorCIELab or similar nested structure
+        if L is None:
+            lab_child = find_one(elem, 'ColorCIELab', 'CIELabColor', 'LabColor')
+            if lab_child is not None:
+                return extract_lab_values(lab_child)
+        
+        if L is not None and a is not None and b is not None:
+            # Validate Lab ranges (L: 0-100, a/b: -128 to 127 typically)
+            if 0 <= L <= 100 and -200 <= a <= 200 and -200 <= b <= 200:
+                return (round(L, 2), round(a, 2), round(b, 2))
+        
+        return None
+    
+    def extract_rgb_values(elem):
+        """Extract RGB values from an element."""
+        if elem is None:
+            return None
+        
+        r, g, b = None, None, None
+        
+        # Strategy 1: Attributes
+        r = parse_number(get_attr(elem, 'R', 'r', 'Red', 'red'))
+        g = parse_number(get_attr(elem, 'G', 'g', 'Green', 'green'))
+        b = parse_number(get_attr(elem, 'B', 'b', 'Blue', 'blue'))
+        
+        # Strategy 2: Child elements
+        if r is None:
+            r = parse_number(get_text(find_one(elem, 'R', 'Red')))
+        if g is None:
+            g = parse_number(get_text(find_one(elem, 'G', 'Green')))
+        if b is None:
+            b = parse_number(get_text(find_one(elem, 'B', 'Blue')))
+        
+        # Strategy 3: Space separated text
+        if r is None and elem.text:
+            parts = elem.text.strip().split()
+            if len(parts) >= 3:
+                r = parse_number(parts[0])
+                g = parse_number(parts[1])
+                b = parse_number(parts[2])
+        
+        if r is not None and g is not None and b is not None:
+            # Normalize to 0-255 range
+            if r <= 1 and g <= 1 and b <= 1:
+                r, g, b = r * 255, g * 255, b * 255
+            return (int(round(r)), int(round(g)), int(round(b)))
+        
+        return None
+    
+    def extract_cmyk_values(elem):
+        """Extract CMYK values from an element."""
+        if elem is None:
+            return None
+        
+        c, m, y, k = None, None, None, None
+        
+        # Strategy 1: Attributes
+        c = parse_number(get_attr(elem, 'C', 'c', 'Cyan', 'cyan'))
+        m = parse_number(get_attr(elem, 'M', 'm', 'Magenta', 'magenta'))
+        y = parse_number(get_attr(elem, 'Y', 'y', 'Yellow', 'yellow'))
+        k = parse_number(get_attr(elem, 'K', 'k', 'Black', 'black', 'Key'))
+        
+        # Strategy 2: Child elements
+        if c is None:
+            c = parse_number(get_text(find_one(elem, 'C', 'Cyan')))
+        if m is None:
+            m = parse_number(get_text(find_one(elem, 'M', 'Magenta')))
+        if y is None:
+            y = parse_number(get_text(find_one(elem, 'Y', 'Yellow')))
+        if k is None:
+            k = parse_number(get_text(find_one(elem, 'K', 'Black', 'Key')))
+        
+        if c is not None and m is not None and y is not None and k is not None:
+            # Normalize to 0-100 range if needed
+            if c <= 1 and m <= 1 and y <= 1 and k <= 1:
+                c, m, y, k = c * 100, m * 100, y * 100, k * 100
+            return (round(c, 2), round(m, 2), round(y, 2), round(k, 2))
+        
+        return None
+    
+    def extract_spectral_data(elem):
+        """Extract spectral reflectance data."""
+        if elem is None:
+            return None
+        
+        # Get wavelength info
+        start_wl = parse_number(get_attr(elem, 'StartWL', 'startWL', 'StartWavelength'))
+        increment = parse_number(get_attr(elem, 'Increment', 'increment', 'WavelengthIncrement'))
+        
+        # Get reflectance values
+        text = get_text(elem)
+        if text:
+            values = [parse_number(v) for v in text.split()]
+            values = [v for v in values if v is not None]
+            if values:
+                return {
+                    'start_wavelength': start_wl or 360,
+                    'increment': increment or 10,
+                    'values': values
+                }
+        
+        return None
+    
+    # Extract file info from various possible locations
+    for header_tag in ['Header', 'FileInformation', 'FileInfo', 'Info', 'Metadata']:
+        header = find_one(root, header_tag)
+        if header is not None:
+            file_info['creator'] = get_text(find_one(header, 'Creator', 'Author', 'CreatedBy'))
+            file_info['description'] = get_text(find_one(header, 'Description', 'Name', 'Title', 'Comment'))
+            file_info['creation_date'] = get_text(find_one(header, 'CreationDate', 'Created', 'Date'))
+            file_info['application'] = get_text(find_one(header, 'Application', 'Software'))
+            if any(file_info.values()):
+                break
+    
+    # Find all color objects - comprehensive list of possible element names
+    object_tags = [
+        'Object', 'Color', 'ColorObject', 'Sample', 'Swatch',
+        'ColorSwatch', 'ColorEntry', 'Entry', 'ColorDef', 'ColorDefinition',
+        'Spot', 'SpotColor', 'ProcessColor', 'NamedColor'
+    ]
+    objects = find_elements_multi_ns(root, *object_tags)
+    
+    # Also look inside ObjectCollection, ColorCollection, Resources, etc.
+    for container_tag in ['ObjectCollection', 'ColorCollection', 'Resources', 'Colors', 'Swatches', 'Library']:
+        container = find_one(root, container_tag)
+        if container is not None:
+            objects.extend(find_elements_multi_ns(container, *object_tags))
+    
+    debug_info['objects_found'] = len(objects)
     
     for obj in objects:
         color_data = {}
         
-        # Get name from various attributes/elements
-        name = get_attr(obj, 'Name', 'name', 'Id', 'id')
+        # Get name from various sources
+        name = get_attr(obj, 'Name', 'name', 'Id', 'id', 'ColorName', 'ObjectName')
         if not name:
-            name_elem = find_one(obj, 'Name', 'ColorName', 'ObjectName')
+            name_elem = find_one(obj, 'Name', 'ColorName', 'ObjectName', 'Label', 'Title')
             name = get_text(name_elem)
+        if not name:
+            # Try getting from parent or ID
+            name = get_attr(obj, 'ObjectId', 'ColorId', 'SwatchId')
         if not name:
             name = f"Color {len(colors) + 1}"
         
-        color_data['name'] = name
-        color_data['id'] = get_attr(obj, 'Id', 'id', 'ObjectId')
+        color_data['name'] = name.strip()
+        color_data['id'] = get_attr(obj, 'Id', 'id', 'ObjectId', 'ColorId')
         
-        # Find Lab values - check multiple possible structures
+        # Find Lab values - search in multiple locations
         lab_found = False
+        lab_tags = ['Lab', 'LAB', 'CIELab', 'LabValue', 'ColorCIELab', 'CIELabValues', 'LabValues']
         
-        # Look for Lab element directly or nested in ColorValues
-        lab_elem = find_one(obj, 'Lab', 'LAB', 'CIELab', 'LabValue')
-        if lab_elem is not None:
-            # Lab values can be attributes or child elements
-            L = get_attr(lab_elem, 'L', 'l', 'Lightness')
-            a = get_attr(lab_elem, 'a', 'A')
-            b = get_attr(lab_elem, 'b', 'B')
-            
-            # Or as child elements
-            if L is None:
-                L = get_text(find_one(lab_elem, 'L', 'Lightness'))
-            if a is None:
-                a = get_text(find_one(lab_elem, 'a', 'A'))
-            if b is None:
-                b = get_text(find_one(lab_elem, 'b', 'B'))
-            
-            # Or as space-separated text
-            if L is None and lab_elem.text:
-                parts = lab_elem.text.strip().split()
-                if len(parts) >= 3:
-                    L, a, b = parts[0], parts[1], parts[2]
-            
-            if L is not None and a is not None and b is not None:
-                try:
-                    color_data['L'] = round(float(L), 2)
-                    color_data['a'] = round(float(a), 2)
-                    color_data['b'] = round(float(b), 2)
+        # First try direct Lab element
+        for lab_tag in lab_tags:
+            lab_elem = find_one(obj, lab_tag)
+            if lab_elem is not None:
+                lab_values = extract_lab_values(lab_elem)
+                if lab_values:
+                    color_data['L'], color_data['a'], color_data['b'] = lab_values
                     lab_found = True
-                except (ValueError, TypeError):
-                    pass
+                    break
         
-        # Look for RGB values
-        rgb_elem = find_one(obj, 'RGB', 'sRGB', 'RGBValue')
-        if rgb_elem is not None:
-            r = get_attr(rgb_elem, 'R', 'r', 'Red')
-            g = get_attr(rgb_elem, 'G', 'g', 'Green')
-            b_val = get_attr(rgb_elem, 'B', 'b', 'Blue')
-            
-            if r is None:
-                r = get_text(find_one(rgb_elem, 'R', 'Red'))
-            if g is None:
-                g = get_text(find_one(rgb_elem, 'G', 'Green'))
-            if b_val is None:
-                b_val = get_text(find_one(rgb_elem, 'B', 'Blue'))
-            
-            if r is not None and g is not None and b_val is not None:
-                try:
-                    r_int = int(float(r) * 255) if float(r) <= 1 else int(float(r))
-                    g_int = int(float(g) * 255) if float(g) <= 1 else int(float(g))
-                    b_int = int(float(b_val) * 255) if float(b_val) <= 1 else int(float(b_val))
-                    color_data['rgb'] = [r_int, g_int, b_int]
-                    
+        # Try ColorValues container
+        if not lab_found:
+            cv_elem = find_one(obj, 'ColorValues', 'ColorValue', 'Values', 'ColorData')
+            if cv_elem is not None:
+                for lab_tag in lab_tags:
+                    lab_elem = find_one(cv_elem, lab_tag)
+                    if lab_elem is not None:
+                        lab_values = extract_lab_values(lab_elem)
+                        if lab_values:
+                            color_data['L'], color_data['a'], color_data['b'] = lab_values
+                            lab_found = True
+                            break
+        
+        # Try extracting Lab directly from object element
+        if not lab_found:
+            lab_values = extract_lab_values(obj)
+            if lab_values:
+                color_data['L'], color_data['a'], color_data['b'] = lab_values
+                lab_found = True
+        
+        # Find RGB values
+        rgb_tags = ['RGB', 'sRGB', 'RGBValue', 'RGBValues', 'ColorRGB']
+        for rgb_tag in rgb_tags:
+            rgb_elem = find_one(obj, rgb_tag)
+            if rgb_elem is not None:
+                rgb_values = extract_rgb_values(rgb_elem)
+                if rgb_values:
+                    color_data['rgb'] = list(rgb_values)
                     # Convert to Lab if not found
                     if not lab_found:
-                        lab = rgb_to_lab(r_int, g_int, b_int)
+                        lab = rgb_to_lab(rgb_values[0], rgb_values[1], rgb_values[2])
                         color_data['L'] = lab[0]
                         color_data['a'] = lab[1]
                         color_data['b'] = lab[2]
                         color_data['converted_from'] = 'rgb'
                         lab_found = True
-                except (ValueError, TypeError):
-                    pass
+                    break
         
-        # Look for CMYK values
-        cmyk_elem = find_one(obj, 'CMYK', 'CMYKValue')
-        if cmyk_elem is not None:
-            c = get_attr(cmyk_elem, 'C', 'c', 'Cyan')
-            m = get_attr(cmyk_elem, 'M', 'm', 'Magenta')
-            y = get_attr(cmyk_elem, 'Y', 'y', 'Yellow')
-            k = get_attr(cmyk_elem, 'K', 'k', 'Black')
-            
-            if c is not None and m is not None and y is not None and k is not None:
-                try:
-                    color_data['cmyk'] = [float(c), float(m), float(y), float(k)]
-                except (ValueError, TypeError):
-                    pass
+        # Find CMYK values
+        cmyk_tags = ['CMYK', 'CMYKValue', 'CMYKValues', 'ColorCMYK', 'ProcessColor']
+        for cmyk_tag in cmyk_tags:
+            cmyk_elem = find_one(obj, cmyk_tag)
+            if cmyk_elem is not None:
+                cmyk_values = extract_cmyk_values(cmyk_elem)
+                if cmyk_values:
+                    color_data['cmyk'] = list(cmyk_values)
+                    # Note: CMYK to Lab conversion would need LittleCMS for accuracy
+                    # For now, just store the CMYK values
+                    break
         
-        # Look for spectral data
-        spectral_elem = find_one(obj, 'ReflectanceSpectrum', 'Spectral', 'SpectralData')
-        if spectral_elem is not None:
-            color_data['has_spectral'] = True
-            # Could parse spectral data here if needed
+        # Find spectral data
+        spectral_tags = ['ReflectanceSpectrum', 'Spectral', 'SpectralData', 'Spectrum', 'ReflectanceData']
+        for spectral_tag in spectral_tags:
+            spectral_elem = find_one(obj, spectral_tag)
+            if spectral_elem is not None:
+                spectral_data = extract_spectral_data(spectral_elem)
+                if spectral_data:
+                    color_data['spectral'] = spectral_data
+                    color_data['has_spectral'] = True
+                    # TODO: Convert spectral to Lab using proper illuminant/observer
+                    break
         
         # Only add if we have Lab values
         if lab_found and 'L' in color_data:
@@ -2515,7 +2739,8 @@ def parse_cxf_xml(content: bytes) -> dict:
     
     return {
         'file_info': file_info,
-        'colors': colors
+        'colors': colors,
+        'debug': debug_info
     }
 
 
@@ -2525,24 +2750,36 @@ async def import_cxf_file(file: UploadFile = File(...)):
     Import colors from a CXF (Color Exchange Format) file.
     
     CXF is the industry standard for color data exchange, used by:
-    - X-Rite spectrophotometers
+    - X-Rite spectrophotometers (i1Pro, eXact, etc.)
     - Pantone color libraries
     - Print industry workflows
+    - Color management software
     
-    Supports multiple CXF versions including CxF/X-4 (ISO 17972-4).
+    Supports multiple CXF versions:
+    - CxF/X-4 (ISO 17972-4)
+    - CxF3-core
+    - CxF2 (legacy)
+    - Proprietary variations (X-Rite, Pantone)
     
     Returns a list of colors with Lab(D50) values.
     """
     try:
         # Check file extension
-        if not file.filename.lower().endswith('.cxf'):
+        filename_lower = file.filename.lower() if file.filename else ''
+        if not filename_lower.endswith('.cxf') and not filename_lower.endswith('.xml'):
             raise HTTPException(
                 status_code=400,
-                detail="File must have .cxf extension"
+                detail="File must have .cxf or .xml extension"
             )
         
         # Read file content
         content = await file.read()
+        
+        if len(content) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="File is empty"
+            )
         
         # Parse CXF file using our robust XML parser
         try:
@@ -2552,6 +2789,11 @@ async def import_cxf_file(file: UploadFile = File(...)):
                 status_code=400,
                 detail=f"Invalid XML in CXF file: {str(e)}"
             )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=str(e)
+            )
         except Exception as e:
             raise HTTPException(
                 status_code=400,
@@ -2560,21 +2802,36 @@ async def import_cxf_file(file: UploadFile = File(...)):
         
         colors = result.get('colors', [])
         file_info = result.get('file_info', {})
+        debug = result.get('debug', {})
         
         if not colors:
+            # Provide helpful debug info
+            detail = "No colors with Lab values found in CXF file."
+            if debug.get('objects_found', 0) > 0:
+                detail += f" Found {debug['objects_found']} color objects but could not extract Lab values."
+            detail += " The file may contain only spectral data, use an unsupported format, or have a different structure."
             raise HTTPException(
                 status_code=400,
-                detail="No colors with Lab values found in CXF file. The file may contain only spectral data or use an unsupported format."
+                detail=detail
             )
+        
+        # Count colors with different data types
+        stats = {
+            'with_rgb': sum(1 for c in colors if 'rgb' in c),
+            'with_cmyk': sum(1 for c in colors if 'cmyk' in c),
+            'with_spectral': sum(1 for c in colors if c.get('has_spectral')),
+            'converted_from_rgb': sum(1 for c in colors if c.get('converted_from') == 'rgb')
+        }
         
         return {
             "success": True,
             "filename": file.filename,
-            "file_info": file_info,
+            "file_info": {k: v for k, v in file_info.items() if v},  # Remove None values
             "colors": colors,
             "count": len(colors),
+            "stats": stats,
             "note": "Lab values are in D50 illuminant (ICC PCS standard)",
-            "parser": "xml-native"
+            "parser": "xml-robust"
         }
         
     except HTTPException:
