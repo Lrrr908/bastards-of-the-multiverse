@@ -215,6 +215,21 @@ except ImportError:
 # CAT16 Chromatic Adaptation Matrices (CIE 2016)
 # Better than Bradford for blue colors and extreme saturations
 # -------------------------------------------------
+# ⚠️  GUARDRAIL - DO NOT MODIFY WITHOUT UNDERSTANDING:
+# 
+# CAT16 is used ONLY for display-referred RGB interpretation.
+# ICC profile transforms (LittleCMS) must NEVER be overridden.
+#
+# This is NOT a full CAM16 appearance model - just chromatic adaptation.
+# If CAM16-UCS is added later, it must remain:
+#   • Derived (computed from Lab(D50), never stored)
+#   • Non-authoritative (Lab(D50) is always the source of truth)
+#   • UI-only (for perceptual ranking/sorting, never for storage or ΔE)
+#
+# The ICC PCS (Profile Connection Space) uses its own internal adaptation.
+# LittleCMS handles CMYK ↔ Lab with profile-embedded transforms.
+# DO NOT replace LittleCMS transforms with CAT16 for CMYK workflows.
+# -------------------------------------------------
 if HAS_NUMPY:
     # CAT16 forward matrix (XYZ to cone response)
     M_CAT16 = np.array([
