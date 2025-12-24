@@ -2744,18 +2744,26 @@ async def export_ase(payload: dict):
     """
     Export color library to Adobe Swatch Exchange (.ase) format
     ASE files can be imported into Photoshop, Illustrator, InDesign, etc.
-    Supports both RGB and CMYK color modes with gamut warnings.
+    
+    Uses Lab color space (device-independent, most accurate):
+    - Preserves original spectrophotometer Lab(D50) data
+    - No gamut conversion errors
+    - Adobe apps convert Lab→RGB/CMYK using their own color settings
+    - Ensures color consistency across different devices and workflows
+    
+    Note: RGB and CMYK modes are still supported via the color_mode parameter
+    but Lab is the default and recommended mode for professional workflows.
     """
     try:
         library_name = payload.get('library_name', 'Color Library')
         colors = payload.get('colors', [])
-        color_mode = payload.get('color_mode', 'rgb').lower()  # 'rgb' or 'cmyk'
+        color_mode = payload.get('color_mode', 'lab').lower()  # Default to 'lab' (device-independent)
         
         if not colors:
             raise HTTPException(status_code=400, detail="No colors provided")
         
-        if color_mode not in ['rgb', 'cmyk']:
-            raise HTTPException(status_code=400, detail="color_mode must be 'rgb' or 'cmyk'")
+        if color_mode not in ['rgb', 'cmyk', 'lab']:
+            raise HTTPException(status_code=400, detail="color_mode must be 'rgb', 'cmyk', or 'lab'")
         
         # Check gamut and create ASE file
         ase_data, warnings = create_ase_file_with_warnings(library_name, colors, color_mode)
@@ -2802,12 +2810,13 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
     Format specification: https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/#50577411_pgfId-1055819
     
     ASE files use big-endian byte order throughout.
-    Supports both RGB and CMYK color modes.
+    Supports Lab (device-independent), RGB (sRGB), and CMYK (GRACoL) color modes.
     
     Args:
         library_name: Name of the swatch library
-        colors: List of color dicts with 'lab' and 'name' keys
-        color_mode: 'rgb' or 'cmyk'
+        colors: List of color dicts with {L, a, b, name} or {lab: [L,a,b], name} keys
+        color_mode: 'lab', 'rgb', or 'cmyk'
+        warnings: Optional list to append gamut warnings to
     """
     output = io.BytesIO()
     
@@ -2848,7 +2857,37 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
         color_name_encoded = name.encode('utf-16-be')
         name_length_field = len(name) + 1  # +1 for null terminator
         
-        if color_mode == 'cmyk':
+        if color_mode == 'lab':
+            # Export Lab values directly (device-independent, most accurate)
+            # Adobe apps will convert Lab→RGB/CMYK using their own color settings
+            L_val = float(lab[0])
+            a_val = float(lab[1])
+            b_val = float(lab[2])
+            
+            # DEBUG: Show Lab values
+            print(f"  -> Lab: L={L_val:.2f}, a={a_val:.2f}, b={b_val:.2f}")
+            
+            # Calculate block length for Lab
+            # name_length(2) + name_utf16(var) + null(2) + color_space(4) + L(4) + a(4) + b(4) + color_type(2)
+            block_length = 2 + len(color_name_encoded) + 2 + 4 + 4 + 4 + 4 + 2
+            output.write(struct.pack('>I', block_length))  # Block length (4 bytes)
+            
+            # Write color name
+            output.write(struct.pack('>H', name_length_field))  # Name length (2 bytes)
+            output.write(color_name_encoded)  # Name in UTF-16BE
+            output.write(b'\x00\x00')  # Null terminator (2 bytes)
+            
+            # Color space: 'LAB ' (4 bytes - note the trailing space is important!)
+            output.write(b'LAB ')
+            
+            # Lab values as floats (native ranges: L=0-100, a=-128 to +127, b=-128 to +127)
+            # ASE expects L as 0-100, but a/b normalized to 0.0-1.0 range
+            # According to Adobe spec: L stays 0-100, but a and b are -128 to +127 as-is
+            output.write(struct.pack('>f', L_val))  # L (4 bytes): 0-100
+            output.write(struct.pack('>f', a_val))  # a (4 bytes): -128 to +127
+            output.write(struct.pack('>f', b_val))  # b (4 bytes): -128 to +127
+            
+        elif color_mode == 'cmyk':
             # Convert Lab(D50) to CMYK using LittleCMS with GRACoL
             cmyk_values = lab_to_cmyk_via_gracol(lab[0], lab[1], lab[2])
             c, m, y, k = cmyk_values
