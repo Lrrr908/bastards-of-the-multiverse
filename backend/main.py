@@ -175,6 +175,9 @@ import xml.etree.ElementTree as ET
 from typing import Optional, List, Dict
 
 from fastapi import FastAPI, HTTPException, Query, UploadFile, File
+from fastapi.responses import StreamingResponse
+import struct
+import io
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -2735,3 +2738,187 @@ async def import_cxf_file(file: UploadFile = File(...)):
             status_code=500,
             detail=f"CXF import failed: {str(e)}"
         )
+
+@app.post("/export-ase")
+async def export_ase(payload: dict):
+    """
+    Export color library to Adobe Swatch Exchange (.ase) format
+    ASE files can be imported into Photoshop, Illustrator, InDesign, etc.
+    """
+    try:
+        library_name = payload.get('library_name', 'Color Library')
+        colors = payload.get('colors', [])
+        
+        if not colors:
+            raise HTTPException(status_code=400, detail="No colors provided")
+        
+        # Create ASE file in memory
+        ase_data = create_ase_file(library_name, colors)
+        
+        # Return as downloadable file
+        return StreamingResponse(
+            io.BytesIO(ase_data),
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename={library_name.replace(' ', '_')}_colors.ase"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"ASE export failed: {str(e)}"
+        )
+
+def create_ase_file(library_name: str, colors: list) -> bytes:
+    """
+    Create Adobe Swatch Exchange (.ase) binary file
+    Format specification: https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/#50577411_pgfId-1055819
+    """
+    output = io.BytesIO()
+    
+    # ASE Header
+    output.write(b'ASEF')  # Signature
+    output.write(struct.pack('>H', 1))  # Version major
+    output.write(struct.pack('>H', 0))  # Version minor
+    
+    # Number of blocks (1 group + colors)
+    num_blocks = 1 + len(colors)
+    output.write(struct.pack('>I', num_blocks))
+    
+    # Group Start Block
+    output.write(struct.pack('>H', 0xC001))  # Block type: Group Start
+    group_name_encoded = library_name.encode('utf-16-be')
+    block_length = 4 + len(group_name_encoded) + 2  # name length + name + null terminator
+    output.write(struct.pack('>I', block_length))
+    output.write(struct.pack('>H', len(library_name) + 1))  # String length (including null)
+    output.write(group_name_encoded)
+    output.write(b'\x00\x00')  # Null terminator
+    
+    # Color Blocks
+    for color in colors:
+        lab = color.get('lab', [50, 0, 0])
+        name = color.get('name', 'Unnamed Color')
+        
+        # Color block type
+        output.write(struct.pack('>H', 0x0001))  # Block type: Color Entry
+        
+        # Color name
+        color_name_encoded = name.encode('utf-16-be')
+        name_length_field = len(name) + 1
+        
+        # Calculate block length
+        # name_length(2) + name(var) + null(2) + color_model(4) + L(4) + a(4) + b(4) + color_type(2)
+        block_length = 2 + len(color_name_encoded) + 2 + 4 + 4 + 4 + 4 + 2
+        output.write(struct.pack('>I', block_length))
+        
+        # Write color name
+        output.write(struct.pack('>H', name_length_field))
+        output.write(color_name_encoded)
+        output.write(b'\x00\x00')  # Null terminator
+        
+        # Color model: 'LAB ' (note the space)
+        output.write(b'LAB ')
+        
+        # Lab values (as floats, normalized to 0-1 range for ASE)
+        # L: 0-100 -> 0-1
+        # a: -128 to 127 -> -1 to 1  
+        # b: -128 to 127 -> -1 to 1
+        L_normalized = lab[0] / 100.0
+        a_normalized = lab[1] / 128.0
+        b_normalized = lab[2] / 128.0
+        
+        output.write(struct.pack('>f', L_normalized))
+        output.write(struct.pack('>f', a_normalized))
+        output.write(struct.pack('>f', b_normalized))
+        
+        # Color type: 0 = Global, 1 = Spot, 2 = Normal
+        output.write(struct.pack('>H', 2))  # Normal color
+    
+    # Group End Block
+    output.write(struct.pack('>H', 0xC002))  # Block type: Group End
+    output.write(struct.pack('>I', 0))  # Block length: 0
+    
+    return output.getvalue()
+
+@app.post("/export-cxf")
+async def export_cxf(payload: dict):
+    """
+    Export color library to Color Exchange Format (.cxf) XML format
+    CXF is an ISO standard for color data exchange
+    """
+    try:
+        library_name = payload.get('library_name', 'Color Library')
+        colors = payload.get('colors', [])
+        
+        if not colors:
+            raise HTTPException(status_code=400, detail="No colors provided")
+        
+        # Create CXF XML
+        cxf_xml = create_cxf_file(library_name, colors)
+        
+        # Return as downloadable file
+        return StreamingResponse(
+            io.BytesIO(cxf_xml.encode('utf-8')),
+            media_type="application/xml",
+            headers={
+                "Content-Disposition": f"attachment; filename={library_name.replace(' ', '_')}_colors.cxf"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"CXF export failed: {str(e)}"
+        )
+
+def create_cxf_file(library_name: str, colors: list) -> str:
+    """
+    Create Color Exchange Format (.cxf) XML file
+    Simplified CXF format with Lab values
+    """
+    from datetime import datetime
+    
+    # XML header
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml += '<CxF xmlns="http://www.xrite.com/schemas/cxf/2.0">\n'
+    xml += '  <FileInformation>\n'
+    xml += f'    <Description>{library_name}</Description>\n'
+    xml += f'    <Creator>Color Match Widget</Creator>\n'
+    xml += f'    <CreationDate>{datetime.now().isoformat()}</CreationDate>\n'
+    xml += '  </FileInformation>\n'
+    xml += '  <Resources>\n'
+    xml += '    <ObjectCollection>\n'
+    
+    # Add each color
+    for idx, color in enumerate(colors, 1):
+        lab = color.get('lab', [50, 0, 0])
+        name = color.get('name', f'Color {idx}')
+        
+        # Escape XML special characters
+        name_escaped = (name
+            .replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;')
+            .replace('"', '&quot;')
+            .replace("'", '&apos;'))
+        
+        xml += f'      <Object Id="Color{idx}" Name="{name_escaped}" ObjectType="Standard">\n'
+        xml += '        <ColorValues>\n'
+        xml += '          <ColorCIELab>\n'
+        xml += f'            <L>{lab[0]:.2f}</L>\n'
+        xml += f'            <A>{lab[1]:.2f}</A>\n'
+        xml += f'            <B>{lab[2]:.2f}</B>\n'
+        xml += '          </ColorCIELab>\n'
+        xml += '        </ColorValues>\n'
+        xml += '      </Object>\n'
+    
+    xml += '    </ObjectCollection>\n'
+    xml += '  </Resources>\n'
+    xml += '</CxF>\n'
+    
+    return xml
