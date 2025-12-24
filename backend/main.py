@@ -2865,7 +2865,17 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             b_val = float(lab[2])
             
             # DEBUG: Show Lab values
-            print(f"  -> Lab: L={L_val:.2f}, a={a_val:.2f}, b={b_val:.2f}")
+            print(f"  -> Lab (raw): L={L_val:.2f}, a={a_val:.2f}, b={b_val:.2f}")
+            
+            # Adobe ASE format expects Lab values normalized to 0.0-1.0 range:
+            # L: 0-100 → 0.0-1.0 (divide by 100)
+            # a: -128 to +127 → 0.0-1.0 (add 128, divide by 255)
+            # b: -128 to +127 → 0.0-1.0 (add 128, divide by 255)
+            L_normalized = L_val / 100.0
+            a_normalized = (a_val + 128.0) / 255.0
+            b_normalized = (b_val + 128.0) / 255.0
+            
+            print(f"  -> Lab (normalized): L={L_normalized:.4f}, a={a_normalized:.4f}, b={b_normalized:.4f}")
             
             # Calculate block length for Lab
             # name_length(2) + name_utf16(var) + null(2) + color_space(4) + L(4) + a(4) + b(4) + color_type(2)
@@ -2880,12 +2890,10 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             # Color space: 'LAB ' (4 bytes - note the trailing space is important!)
             output.write(b'LAB ')
             
-            # Lab values as floats (native ranges: L=0-100, a=-128 to +127, b=-128 to +127)
-            # ASE expects L as 0-100, but a/b normalized to 0.0-1.0 range
-            # According to Adobe spec: L stays 0-100, but a and b are -128 to +127 as-is
-            output.write(struct.pack('>f', L_val))  # L (4 bytes): 0-100
-            output.write(struct.pack('>f', a_val))  # a (4 bytes): -128 to +127
-            output.write(struct.pack('>f', b_val))  # b (4 bytes): -128 to +127
+            # Write normalized Lab values as floats (0.0-1.0 range)
+            output.write(struct.pack('>f', L_normalized))  # L (4 bytes): 0.0-1.0
+            output.write(struct.pack('>f', a_normalized))  # a (4 bytes): 0.0-1.0
+            output.write(struct.pack('>f', b_normalized))  # b (4 bytes): 0.0-1.0
             
         elif color_mode == 'cmyk':
             # Convert Lab(D50) to CMYK using LittleCMS with GRACoL
