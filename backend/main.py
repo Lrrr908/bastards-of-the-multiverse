@@ -173,7 +173,7 @@ import re
 import math
 from typing import Optional, List, Dict
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -2318,4 +2318,150 @@ def color_compare(payload: dict):
         raise HTTPException(
             status_code=500,
             detail=f"Color comparison failed: {str(e)}"
+        )
+
+
+# -------------------------------------------------
+# CXF File Import Endpoint
+# -------------------------------------------------
+# CXF (Color Exchange Format) is an ISO standard (ISO 17972-4)
+# for exchanging color data between applications.
+# CXF files are XML-based and can contain:
+#   - Lab values (already D50, which is our canonical format)
+#   - Spectral data (360-780nm reflectance curves)
+#   - RGB, CMYK values
+#   - Color metadata (names, descriptions)
+# -------------------------------------------------
+
+@app.post("/import-cxf")
+async def import_cxf_file(file: UploadFile = File(...)):
+    """
+    Import colors from a CXF (Color Exchange Format) file.
+    
+    CXF is the industry standard for color data exchange, used by:
+    - X-Rite spectrophotometers
+    - Pantone color libraries
+    - Print industry workflows
+    
+    Returns a list of colors with Lab(D50) values.
+    """
+    try:
+        # Check file extension
+        if not file.filename.lower().endswith('.cxf'):
+            raise HTTPException(
+                status_code=400,
+                detail="File must have .cxf extension"
+            )
+        
+        # Read file content
+        content = await file.read()
+        
+        # Try to import colour-cxf library
+        try:
+            import colour_cxf
+        except ImportError:
+            raise HTTPException(
+                status_code=500,
+                detail="colour-cxf library not installed. Run: pip install colour-cxf"
+            )
+        
+        # Parse CXF file
+        try:
+            cxf = colour_cxf.read_cxf(content)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to parse CXF file: {str(e)}"
+            )
+        
+        # Extract colors
+        colors = []
+        
+        # Check if we have an object collection
+        if hasattr(cxf, 'object_collection') and cxf.object_collection:
+            objects = cxf.object_collection.objects if hasattr(cxf.object_collection, 'objects') else []
+            
+            for obj in objects:
+                color_data = {
+                    "name": getattr(obj, 'name', None) or getattr(obj, 'id', f"Color {len(colors) + 1}"),
+                    "id": getattr(obj, 'id', None),
+                }
+                
+                # Try to extract Lab values
+                lab_found = False
+                
+                # Check for color values
+                if hasattr(obj, 'color_values') and obj.color_values:
+                    cv = obj.color_values
+                    
+                    # Direct Lab values
+                    if hasattr(cv, 'lab') and cv.lab:
+                        lab = cv.lab
+                        color_data["L"] = round(float(getattr(lab, 'l', getattr(lab, 'L', 0))), 2)
+                        color_data["a"] = round(float(getattr(lab, 'a', 0)), 2)
+                        color_data["b"] = round(float(getattr(lab, 'b', 0)), 2)
+                        lab_found = True
+                    
+                    # Check for spectral data (would need conversion)
+                    elif hasattr(cv, 'spectral') and cv.spectral:
+                        # Spectral data requires proper conversion with illuminant/observer
+                        # This is complex - for now, skip and note it
+                        color_data["spectral_data"] = True
+                        color_data["note"] = "Spectral data present - Lab conversion pending"
+                    
+                    # Check for RGB values
+                    if hasattr(cv, 'rgb') and cv.rgb:
+                        rgb = cv.rgb
+                        r = int(getattr(rgb, 'r', getattr(rgb, 'R', 0)))
+                        g = int(getattr(rgb, 'g', getattr(rgb, 'G', 0)))
+                        b_val = int(getattr(rgb, 'b', getattr(rgb, 'B', 0)))
+                        color_data["rgb"] = [r, g, b_val]
+                        
+                        # If no Lab, convert RGB to Lab
+                        if not lab_found:
+                            lab = rgb_to_lab(r, g, b_val)
+                            color_data["L"] = lab[0]
+                            color_data["a"] = lab[1]
+                            color_data["b"] = lab[2]
+                            color_data["converted_from"] = "rgb"
+                            lab_found = True
+                    
+                    # Check for CMYK values
+                    if hasattr(cv, 'cmyk') and cv.cmyk:
+                        cmyk = cv.cmyk
+                        c = float(getattr(cmyk, 'c', getattr(cmyk, 'C', 0)))
+                        m = float(getattr(cmyk, 'm', getattr(cmyk, 'M', 0)))
+                        y = float(getattr(cmyk, 'y', getattr(cmyk, 'Y', 0)))
+                        k = float(getattr(cmyk, 'k', getattr(cmyk, 'K', 0)))
+                        color_data["cmyk"] = [c, m, y, k]
+                
+                # Only add colors that have Lab values
+                if lab_found or "L" in color_data:
+                    colors.append(color_data)
+        
+        # Get file info if available
+        file_info = {}
+        if hasattr(cxf, 'file_information') and cxf.file_information:
+            fi = cxf.file_information
+            file_info = {
+                "creator": getattr(fi, 'creator', None),
+                "description": getattr(fi, 'description', None),
+                "creation_date": str(getattr(fi, 'creation_date', None)) if hasattr(fi, 'creation_date') else None
+            }
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "file_info": file_info,
+            "colors": colors,
+            "count": len(colors),
+            "note": "Lab values are in D50 illuminant (ICC PCS standard)"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"CXF import failed: {str(e)}"
         )
