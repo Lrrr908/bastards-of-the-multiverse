@@ -237,14 +237,16 @@ def lcms_health():
         
         return {
             "ok": True,
-            "method": "CIE Color Science (sRGB IEC 61966-2-1, D65 Lab)",
+            "method": "CIE Color Science with Bradford Chromatic Adaptation",
+            "illuminant": "D50 (spectrophotometer standard)",
+            "pipeline": "sRGB(D65) → XYZ(D65) → Bradford → XYZ(D50) → Lab(D50)",
             "lab_is_source_of_truth": True,
             "has_littlecms": has_littlecms,
             "littlecms_status": lcms_status,
-            "note": "RGB<->Lab uses CIE formulas. CMYK uses LittleCMS with ICC profiles.",
-            "test_conversion": f"RGB(255,200,69) -> Lab{test_lab}",
-            "reverse_test": f"Lab{test_lab} -> RGB{test_rgb}",
-            "roundtrip_test": f"RGB{test_rgb} -> Lab{roundtrip_lab}",
+            "note": "Lab(D50) is canonical. RGB/Hex are display approximations. CMYK uses LittleCMS with ICC profiles.",
+            "test_conversion": f"sRGB(255,200,69) -> Lab(D50){test_lab}",
+            "reverse_test": f"Lab(D50){test_lab} -> sRGB{test_rgb}",
+            "roundtrip_test": f"sRGB{test_rgb} -> Lab(D50){roundtrip_lab}",
             "roundtrip_precision": f"L diff: {abs(test_lab[0] - roundtrip_lab[0]):.4f}, a diff: {abs(test_lab[1] - roundtrip_lab[1]):.4f}, b diff: {abs(test_lab[2] - roundtrip_lab[2]):.4f}"
         }
     except Exception as e:
@@ -307,19 +309,19 @@ def rgb_to_cmyk(r: int, g: int, b: int) -> List[float]:
 
 def rgb_to_lab(r: int, g: int, b: int) -> tuple:
     """
-    Convert RGB to L*a*b* using LittleCMS color management.
-    Uses sRGB profile and D65 Lab with high precision.
+    Convert sRGB (D65) to Lab(D50) - the spectrophotometer standard.
     
-    The conversion uses the standard CIE color science formulas
-    which are the same as what LittleCMS uses internally.
-    This ensures Lab is the source of truth and all conversions
-    are consistent with industry-standard color management.
+    PIPELINE:
+    1. sRGB (gamma) → Linear RGB
+    2. Linear RGB → XYZ (D65)
+    3. XYZ (D65) → XYZ (D50) via Bradford chromatic adaptation
+    4. XYZ (D50) → Lab (D50)
     
-    Returns (L, a, b) tuple.
+    Lab(D50) is the single source of truth for comparing against
+    spectrophotometer-scanned color libraries.
+    
+    Returns (L, a, b) tuple in D50 illuminant.
     """
-    # Use the standard CIE color science formulas (same as LittleCMS internally)
-    # This gives us full floating-point precision while being CMS-compatible
-    
     # Step 1: sRGB to linear RGB (IEC 61966-2-1 standard)
     def srgb_to_linear(c):
         c = c / 255.0
@@ -332,16 +334,23 @@ def rgb_to_lab(r: int, g: int, b: int) -> tuple:
     g_lin = srgb_to_linear(g)
     b_lin = srgb_to_linear(b)
     
-    # Step 2: Linear RGB to XYZ (IEC 61966-2-1 sRGB matrix, D65)
-    X = r_lin * 0.4124564 + g_lin * 0.3575761 + b_lin * 0.1804375
-    Y = r_lin * 0.2126729 + g_lin * 0.7151522 + b_lin * 0.0721750
-    Z = r_lin * 0.0193339 + g_lin * 0.1191920 + b_lin * 0.9503041
+    # Step 2: Linear RGB to XYZ (D65) - sRGB standard matrix
+    X_d65 = r_lin * 0.4124564 + g_lin * 0.3575761 + b_lin * 0.1804375
+    Y_d65 = r_lin * 0.2126729 + g_lin * 0.7151522 + b_lin * 0.0721750
+    Z_d65 = r_lin * 0.0193339 + g_lin * 0.1191920 + b_lin * 0.9503041
     
-    # Step 3: XYZ to Lab (CIE 1976 L*a*b*, D65 illuminant)
-    # D65 reference white point (same as LittleCMS default)
-    Xn = 0.95047
+    # Step 3: Chromatic adaptation D65 → D50 (Bradford transform)
+    # This is the industry-standard method used by ICC profiles
+    # Bradford matrix for D65 → D50
+    X_d50 = X_d65 *  1.0478112 + Y_d65 *  0.0228866 + Z_d65 * -0.0501270
+    Y_d50 = X_d65 *  0.0295424 + Y_d65 *  0.9904844 + Z_d65 * -0.0170491
+    Z_d50 = X_d65 * -0.0092345 + Y_d65 *  0.0150436 + Z_d65 *  0.7521316
+    
+    # Step 4: XYZ (D50) to Lab (D50)
+    # D50 reference white point (standard illuminant for print/spectro)
+    Xn = 0.96422
     Yn = 1.00000
-    Zn = 1.08883
+    Zn = 0.82521
     
     def f(t):
         # CIE standard cube root function with linear portion
@@ -351,9 +360,9 @@ def rgb_to_lab(r: int, g: int, b: int) -> tuple:
         else:
             return t / (3.0 * delta ** 2) + 4.0 / 29.0
     
-    fx = f(X / Xn)
-    fy = f(Y / Yn)
-    fz = f(Z / Zn)
+    fx = f(X_d50 / Xn)
+    fy = f(Y_d50 / Yn)
+    fz = f(Z_d50 / Zn)
     
     L = 116.0 * fy - 16.0
     a = 500.0 * (fx - fy)
@@ -364,20 +373,24 @@ def rgb_to_lab(r: int, g: int, b: int) -> tuple:
 
 def lab_to_rgb(L: float, a: float, b_val: float) -> tuple:
     """
-    Convert L*a*b* to RGB (0-255) using LittleCMS-compatible color management.
-    Uses D65 Lab to XYZ to sRGB conversion with high precision.
+    Convert Lab(D50) to sRGB (D65) for screen display.
     
-    Lab is the source of truth - this function converts Lab values
-    to their sRGB representation for display. The conversion uses
-    the same CIE color science formulas as LittleCMS.
+    PIPELINE:
+    1. Lab (D50) → XYZ (D50)
+    2. XYZ (D50) → XYZ (D65) via Bradford chromatic adaptation
+    3. XYZ (D65) → Linear RGB
+    4. Linear RGB → sRGB (gamma)
     
-    Returns (r, g, b) tuple.
+    This is a DISPLAY APPROXIMATION only. The screen swatch is a
+    best-effort preview. Accuracy lives in the Lab(D50) numbers.
+    
+    Returns (r, g, b) tuple for sRGB display.
     """
-    # Step 1: Lab to XYZ (CIE 1976 L*a*b*, D65 illuminant)
-    # D65 reference white point (same as LittleCMS default)
-    Xn = 0.95047
+    # Step 1: Lab (D50) to XYZ (D50)
+    # D50 reference white point (standard illuminant for print/spectro)
+    Xn = 0.96422
     Yn = 1.00000
-    Zn = 1.08883
+    Zn = 0.82521
     
     # Inverse CIE f function
     def f_inv(t):
@@ -391,16 +404,22 @@ def lab_to_rgb(L: float, a: float, b_val: float) -> tuple:
     fx = a / 500.0 + fy
     fz = fy - b_val / 200.0
     
-    X = Xn * f_inv(fx)
-    Y = Yn * f_inv(fy)
-    Z = Zn * f_inv(fz)
+    X_d50 = Xn * f_inv(fx)
+    Y_d50 = Yn * f_inv(fy)
+    Z_d50 = Zn * f_inv(fz)
     
-    # Step 2: XYZ to linear RGB (IEC 61966-2-1 inverse sRGB matrix)
-    r_lin =  3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z
-    g_lin = -0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z
-    b_lin =  0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z
+    # Step 2: Chromatic adaptation D50 → D65 (Bradford transform inverse)
+    # Bradford matrix for D50 → D65
+    X_d65 = X_d50 *  0.9555766 + Y_d50 * -0.0230393 + Z_d50 *  0.0631636
+    Y_d65 = X_d50 * -0.0282895 + Y_d50 *  1.0099416 + Z_d50 *  0.0210077
+    Z_d65 = X_d50 *  0.0122982 + Y_d50 * -0.0204830 + Z_d50 *  1.3299098
     
-    # Step 3: Linear RGB to sRGB (IEC 61966-2-1 gamma correction)
+    # Step 3: XYZ (D65) to linear RGB (sRGB matrix)
+    r_lin =  3.2404542 * X_d65 - 1.5371385 * Y_d65 - 0.4985314 * Z_d65
+    g_lin = -0.9692660 * X_d65 + 1.8760108 * Y_d65 + 0.0415560 * Z_d65
+    b_lin =  0.0556434 * X_d65 - 0.2040259 * Y_d65 + 1.0572252 * Z_d65
+    
+    # Step 4: Linear RGB to sRGB (gamma correction)
     def linear_to_srgb(c):
         if c <= 0.0031308:
             return 12.92 * c
