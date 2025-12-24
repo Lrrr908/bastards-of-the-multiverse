@@ -2555,51 +2555,12 @@ def parse_cxf_xml(content: bytes) -> dict:
         if any(file_info.values()):
             break
     
-    # Find color objects - CXF files have two main sections:
-    # 1. Resources/ColorSpecifications - defines color specs (we want to SKIP these)
-    # 2. ObjectCollection - the actual color objects (we want THESE)
-    
-    object_tags = {'object', 'color', 'colorobject', 'sample', 'swatch', 
-                   'colorswatch', 'colorentry', 'spotcolor', 'namedcolor'}
-    
-    # Build a set of elements that are inside Resources/Specifications (to exclude)
-    exclude_elements = set()
-    for container in find_by_tags('Resources', 'ColorSpecification', 'ColorSpecifications', 
-                                   'Specifications', 'DeviceColorValues'):
-        for elem in container.iter():
-            exclude_elements.add(id(elem))
-    
-    # Find ObjectCollection first (preferred location for color objects)
-    objects = []
-    seen_ids = set()
-    
-    object_collections = find_by_tags('ObjectCollection', 'ColorCollection', 'Objects', 
-                                       'Colors', 'Swatches', 'Library', 'Palette')
-    
-    if object_collections:
-        # Only get objects from ObjectCollection containers
-        for collection in object_collections:
-            # Skip if this collection is inside Resources
-            if id(collection) in exclude_elements:
-                continue
-            for elem in collection.iter():
-                if elem is collection:
-                    continue
-                tag_lower = elem.tag.lower() if isinstance(elem.tag, str) else ''
-                if tag_lower in object_tags:
-                    elem_id = id(elem)
-                    if elem_id not in seen_ids and elem_id not in exclude_elements:
-                        seen_ids.add(elem_id)
-                        objects.append(elem)
-    else:
-        # Fallback: get all objects not in Resources
-        for tag in object_tags:
-            if tag in tag_map:
-                for elem in tag_map[tag]:
-                    elem_id = id(elem)
-                    if elem_id not in seen_ids and elem_id not in exclude_elements:
-                        seen_ids.add(elem_id)
-                        objects.append(elem)
+    # Find all color objects (simple approach - deduplicate by name later)
+    objects = find_by_tags(
+        'Object', 'Color', 'ColorObject', 'Sample', 'Swatch',
+        'ColorSwatch', 'ColorEntry', 'Entry', 'ColorDef',
+        'SpotColor', 'NamedColor'
+    )
     
     # Process each color object
     for obj in objects:
@@ -2658,10 +2619,22 @@ def parse_cxf_xml(content: bytes) -> dict:
         if lab_found and 'L' in color_data:
             colors.append(color_data)
     
+    # Deduplicate by color name (CXF files often have same color in multiple places)
+    seen_names = set()
+    unique_colors = []
+    for color in colors:
+        name = color.get('name', '')
+        if name and name not in seen_names:
+            seen_names.add(name)
+            unique_colors.append(color)
+        elif not name:
+            # Keep colors without names
+            unique_colors.append(color)
+    
     return {
         'file_info': file_info,
-        'colors': colors,
-        'debug': {'objects_found': len(objects)}
+        'colors': unique_colors,
+        'debug': {'objects_found': len(objects), 'before_dedup': len(colors), 'after_dedup': len(unique_colors)}
     }
 
 
