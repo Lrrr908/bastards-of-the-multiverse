@@ -2744,7 +2744,7 @@ async def export_ase(payload: dict):
     """
     Export color library to Adobe Swatch Exchange (.ase) format
     ASE files can be imported into Photoshop, Illustrator, InDesign, etc.
-    Supports both RGB and CMYK color modes.
+    Supports both RGB and CMYK color modes with gamut warnings.
     """
     try:
         library_name = payload.get('library_name', 'Color Library')
@@ -2757,19 +2757,26 @@ async def export_ase(payload: dict):
         if color_mode not in ['rgb', 'cmyk']:
             raise HTTPException(status_code=400, detail="color_mode must be 'rgb' or 'cmyk'")
         
-        # Create ASE file in memory
-        ase_data = create_ase_file(library_name, colors, color_mode)
+        # Check gamut and create ASE file
+        ase_data, warnings = create_ase_file_with_warnings(library_name, colors, color_mode)
         
-        # Return as downloadable file
+        # Return as downloadable file with gamut info in headers
         mode_label = color_mode.upper()
         filename = f"{library_name.replace(' ', '_')}_{mode_label}_colors.ase"
+        
+        response_headers = {
+            "Content-Disposition": f"attachment; filename={filename}",
+            "X-Gamut-Warnings": str(len(warnings)),  # Number of out-of-gamut colors
+        }
+        
+        # Add warning details if any
+        if warnings:
+            response_headers["X-Warning-Details"] = "; ".join(warnings[:5])  # First 5 warnings
         
         return StreamingResponse(
             io.BytesIO(ase_data),
             media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            }
+            headers=response_headers
         )
         
     except HTTPException:
@@ -2780,7 +2787,16 @@ async def export_ase(payload: dict):
             detail=f"ASE export failed: {str(e)}"
         )
 
-def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb') -> bytes:
+def create_ase_file_with_warnings(library_name: str, colors: list, color_mode: str = 'rgb') -> tuple:
+    """
+    Create ASE file and return gamut warnings
+    Returns: (ase_data: bytes, warnings: list)
+    """
+    warnings = []
+    ase_data = create_ase_file(library_name, colors, color_mode, warnings)
+    return ase_data, warnings
+
+def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', warnings: list = None) -> bytes:
     """
     Create Adobe Swatch Exchange (.ase) binary file
     Format specification: https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/#50577411_pgfId-1055819
@@ -2828,6 +2844,16 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb') ->
             cmyk_values = lab_to_cmyk_via_gracol(lab[0], lab[1], lab[2])
             c, m, y, k = cmyk_values
             
+            # DEBUG: Show CMYK conversion
+            print(f"  -> CMYK: C={c:.1f}, M={m:.1f}, Y={y:.1f}, K={k:.1f}")
+            
+            # Check for gamut issues (high K value often indicates out-of-gamut)
+            if warnings is not None:
+                if k > 95:
+                    warnings.append(f"{name}: Very dark in CMYK (K={k:.0f}%)")
+                if c == 100 and m == 100 and y == 100:
+                    warnings.append(f"{name}: Out of GRACoL gamut (CMY all 100%)")
+            
             # Calculate block length for CMYK
             # name_length(2) + name_utf16(var) + null(2) + color_space(4) + C(4) + M(4) + Y(4) + K(4) + color_type(2)
             block_length = 2 + len(color_name_encoded) + 2 + 4 + 4 + 4 + 4 + 4 + 2
@@ -2855,6 +2881,15 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb') ->
         else:  # RGB mode
             # Convert Lab(D50) to RGB
             r, g, b_rgb = lab_to_rgb(lab[0], lab[1], lab[2])
+            
+            # DEBUG: Show RGB conversion
+            print(f"  -> RGB: R={r}, G={g}, B={b_rgb}")
+            
+            # Check for gamut clipping
+            if warnings is not None:
+                if r == 0 or r == 255 or g == 0 or g == 255 or b_rgb == 0 or b_rgb == 255:
+                    warnings.append(f"{name}: Out of sRGB gamut (clipped)")
+                    print(f"  ⚠️  WARNING: {name} clipped in sRGB gamut")
             
             # Calculate block length for RGB
             # name_length(2) + name_utf16(var) + null(2) + color_space(4) + R(4) + G(4) + B(4) + color_type(2)
