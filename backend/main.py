@@ -1,3 +1,44 @@
+"""
+===============================================================================
+                        COLOR MANAGEMENT SYSTEM - HARD RULES
+===============================================================================
+
+All color libraries are based on real, physical materials scanned with a
+spectrophotometer. Those scans describe how a color looks in real life under
+standard lighting (D50), not how it looks on a phone or monitor.
+
+CANONICAL FORMAT: Lab(D50)
+─────────────────────────
+Every color in the system must ultimately live in Lab(D50).
+
+HARD RULES (NEVER VIOLATE):
+───────────────────────────
+❌ NEVER compare Lab(D65) to Lab(D50) - illuminants must match for valid ΔE
+❌ NEVER store RGB or HEX as truth - these are display approximations only  
+❌ NEVER do ΔE calculations outside Lab(D50) - results will be wrong
+✔  ALWAYS convert to Lab(D50) before any matching, ranking, averaging, or ΔE
+
+PIPELINE:
+─────────
+• Spectro scans      → Already Lab(D50), store directly
+• User HEX/RGB input → sRGB(D65) → XYZ(D65) → Bradford → XYZ(D50) → Lab(D50)
+• Screen display     → Lab(D50) → XYZ(D50) → Bradford → XYZ(D65) → sRGB (preview only)
+• All matching logic → Happens in Lab(D50)
+
+WHAT WE ARE NOT DOING:
+──────────────────────
+• We are NOT trying to make the screen match perfectly
+• We are NOT trusting RGB as a measurement  
+• We are NOT skipping white-point adaptation
+• We are NOT mixing Lab(D65) and Lab(D50) in ΔE math
+
+Think of it like this:
+  Lab(D50) = real-world color truth
+  RGB/HEX  = display approximation (best-effort preview only)
+
+===============================================================================
+"""
+
 from pathlib import Path
 import re
 import math
@@ -458,8 +499,12 @@ def calculate_delta_e_2000(lab1: tuple, lab2: tuple, kL: float = 1.0, kC: float 
     Calculate Delta E 2000 (CIEDE2000) between two Lab colors.
     This is the industry standard for perceptual color difference.
     
+    ⚠️  HARD RULE: Both lab1 and lab2 MUST be in Lab(D50) illuminant!
+    ❌ NEVER pass Lab(D65) values here - results will be WRONG
+    ✔  All colors must be converted to Lab(D50) before calling this function
+    
     Parameters:
-        lab1, lab2: (L, a, b) tuples
+        lab1, lab2: (L, a, b) tuples - MUST BE Lab(D50)
         kL, kC, kH: Weighting factors (default 1.0 for standard conditions)
     
     Returns:
