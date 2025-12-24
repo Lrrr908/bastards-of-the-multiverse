@@ -2831,20 +2831,28 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
     
     # Color Blocks
     for color in colors:
+        # DEBUG: Show raw color data structure
+        print(f"\n=== Processing color ===")
+        print(f"Color keys: {list(color.keys())}")
+        print(f"Color data: {color}")
+        
         # Handle both data formats:
         # Format 1: {name, L, a, b} (frontend format)
         # Format 2: {name, lab: [L, a, b]} (legacy format)
         if 'lab' in color:
             lab = color['lab']
+            print(f"✓ Found 'lab' key: {lab}")
         elif 'L' in color and 'a' in color and 'b' in color:
             lab = [color['L'], color['a'], color['b']]
+            print(f"✓ Found L/a/b keys: L={color['L']}, a={color['a']}, b={color['b']}")
         else:
             lab = [50, 0, 0]  # Default grey
+            print(f"✗ NO LAB DATA FOUND - defaulting to grey [50, 0, 0]")
         
         name = color.get('name', 'Unnamed Color')
         
-        # DEBUG: Log what we're receiving
-        print(f"ASE Export - {name}: Lab = {lab}")
+        # DEBUG: Log final Lab values
+        print(f"Final Lab for '{name}': {lab}")
         
         # Limit name length for safety
         if len(name) > 100:
