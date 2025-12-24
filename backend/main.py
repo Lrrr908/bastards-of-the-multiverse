@@ -2331,7 +2331,193 @@ def color_compare(payload: dict):
 #   - Spectral data (360-780nm reflectance curves)
 #   - RGB, CMYK values
 #   - Color metadata (names, descriptions)
+#
+# This parser handles multiple CXF versions:
+#   - CxF/X-4 (ISO 17972-4) with Header element
+#   - CxF3-core (older format)
+#   - Various namespace variations
 # -------------------------------------------------
+
+import xml.etree.ElementTree as ET
+import re
+
+def parse_cxf_xml(content: bytes) -> dict:
+    """
+    Parse CXF file using raw XML parsing.
+    Handles multiple CXF versions and namespace variations.
+    """
+    # Decode content
+    try:
+        xml_str = content.decode('utf-8')
+    except UnicodeDecodeError:
+        xml_str = content.decode('latin-1')
+    
+    # Parse XML
+    root = ET.fromstring(xml_str)
+    
+    # Common CXF namespaces
+    namespaces = {
+        'cxf': 'http://colorexchangeformat.com/CxF3-core',
+        'cxf4': 'http://www.color.org/CxF/X-4',
+        'xsi': 'http://www.w3.org/2001/XMLSchema-instance'
+    }
+    
+    # Extract namespace from root if present
+    root_ns = ''
+    if root.tag.startswith('{'):
+        root_ns = root.tag.split('}')[0] + '}'
+    
+    colors = []
+    file_info = {}
+    
+    # Helper to find elements with various namespace prefixes
+    def find_all(parent, *tag_names):
+        results = []
+        for tag in tag_names:
+            # Try without namespace
+            results.extend(parent.findall(f".//{tag}"))
+            # Try with detected namespace
+            if root_ns:
+                results.extend(parent.findall(f".//{root_ns}{tag}"))
+            # Try with known namespaces
+            for ns_prefix, ns_uri in namespaces.items():
+                results.extend(parent.findall(f".//{{{ns_uri}}}{tag}"))
+        return results
+    
+    def find_one(parent, *tag_names):
+        results = find_all(parent, *tag_names)
+        return results[0] if results else None
+    
+    def get_text(elem):
+        return elem.text.strip() if elem is not None and elem.text else None
+    
+    def get_attr(elem, *attr_names):
+        if elem is None:
+            return None
+        for attr in attr_names:
+            if attr in elem.attrib:
+                return elem.attrib[attr]
+        return None
+    
+    # Extract file info
+    header = find_one(root, 'Header', 'FileInformation')
+    if header is not None:
+        file_info['creator'] = get_text(find_one(header, 'Creator'))
+        file_info['description'] = get_text(find_one(header, 'Description', 'Name'))
+        file_info['creation_date'] = get_text(find_one(header, 'CreationDate'))
+    
+    # Find all color objects - try multiple element names
+    objects = find_all(root, 'Object', 'Color', 'ColorObject', 'Sample')
+    
+    for obj in objects:
+        color_data = {}
+        
+        # Get name from various attributes/elements
+        name = get_attr(obj, 'Name', 'name', 'Id', 'id')
+        if not name:
+            name_elem = find_one(obj, 'Name', 'ColorName', 'ObjectName')
+            name = get_text(name_elem)
+        if not name:
+            name = f"Color {len(colors) + 1}"
+        
+        color_data['name'] = name
+        color_data['id'] = get_attr(obj, 'Id', 'id', 'ObjectId')
+        
+        # Find Lab values - check multiple possible structures
+        lab_found = False
+        
+        # Look for Lab element directly or nested in ColorValues
+        lab_elem = find_one(obj, 'Lab', 'LAB', 'CIELab', 'LabValue')
+        if lab_elem is not None:
+            # Lab values can be attributes or child elements
+            L = get_attr(lab_elem, 'L', 'l', 'Lightness')
+            a = get_attr(lab_elem, 'a', 'A')
+            b = get_attr(lab_elem, 'b', 'B')
+            
+            # Or as child elements
+            if L is None:
+                L = get_text(find_one(lab_elem, 'L', 'Lightness'))
+            if a is None:
+                a = get_text(find_one(lab_elem, 'a', 'A'))
+            if b is None:
+                b = get_text(find_one(lab_elem, 'b', 'B'))
+            
+            # Or as space-separated text
+            if L is None and lab_elem.text:
+                parts = lab_elem.text.strip().split()
+                if len(parts) >= 3:
+                    L, a, b = parts[0], parts[1], parts[2]
+            
+            if L is not None and a is not None and b is not None:
+                try:
+                    color_data['L'] = round(float(L), 2)
+                    color_data['a'] = round(float(a), 2)
+                    color_data['b'] = round(float(b), 2)
+                    lab_found = True
+                except (ValueError, TypeError):
+                    pass
+        
+        # Look for RGB values
+        rgb_elem = find_one(obj, 'RGB', 'sRGB', 'RGBValue')
+        if rgb_elem is not None:
+            r = get_attr(rgb_elem, 'R', 'r', 'Red')
+            g = get_attr(rgb_elem, 'G', 'g', 'Green')
+            b_val = get_attr(rgb_elem, 'B', 'b', 'Blue')
+            
+            if r is None:
+                r = get_text(find_one(rgb_elem, 'R', 'Red'))
+            if g is None:
+                g = get_text(find_one(rgb_elem, 'G', 'Green'))
+            if b_val is None:
+                b_val = get_text(find_one(rgb_elem, 'B', 'Blue'))
+            
+            if r is not None and g is not None and b_val is not None:
+                try:
+                    r_int = int(float(r) * 255) if float(r) <= 1 else int(float(r))
+                    g_int = int(float(g) * 255) if float(g) <= 1 else int(float(g))
+                    b_int = int(float(b_val) * 255) if float(b_val) <= 1 else int(float(b_val))
+                    color_data['rgb'] = [r_int, g_int, b_int]
+                    
+                    # Convert to Lab if not found
+                    if not lab_found:
+                        lab = rgb_to_lab(r_int, g_int, b_int)
+                        color_data['L'] = lab[0]
+                        color_data['a'] = lab[1]
+                        color_data['b'] = lab[2]
+                        color_data['converted_from'] = 'rgb'
+                        lab_found = True
+                except (ValueError, TypeError):
+                    pass
+        
+        # Look for CMYK values
+        cmyk_elem = find_one(obj, 'CMYK', 'CMYKValue')
+        if cmyk_elem is not None:
+            c = get_attr(cmyk_elem, 'C', 'c', 'Cyan')
+            m = get_attr(cmyk_elem, 'M', 'm', 'Magenta')
+            y = get_attr(cmyk_elem, 'Y', 'y', 'Yellow')
+            k = get_attr(cmyk_elem, 'K', 'k', 'Black')
+            
+            if c is not None and m is not None and y is not None and k is not None:
+                try:
+                    color_data['cmyk'] = [float(c), float(m), float(y), float(k)]
+                except (ValueError, TypeError):
+                    pass
+        
+        # Look for spectral data
+        spectral_elem = find_one(obj, 'ReflectanceSpectrum', 'Spectral', 'SpectralData')
+        if spectral_elem is not None:
+            color_data['has_spectral'] = True
+            # Could parse spectral data here if needed
+        
+        # Only add if we have Lab values
+        if lab_found and 'L' in color_data:
+            colors.append(color_data)
+    
+    return {
+        'file_info': file_info,
+        'colors': colors
+    }
+
 
 @app.post("/import-cxf")
 async def import_cxf_file(file: UploadFile = File(...)):
@@ -2342,6 +2528,8 @@ async def import_cxf_file(file: UploadFile = File(...)):
     - X-Rite spectrophotometers
     - Pantone color libraries
     - Print industry workflows
+    
+    Supports multiple CXF versions including CxF/X-4 (ISO 17972-4).
     
     Returns a list of colors with Lab(D50) values.
     """
@@ -2356,98 +2544,28 @@ async def import_cxf_file(file: UploadFile = File(...)):
         # Read file content
         content = await file.read()
         
-        # Try to import colour-cxf library
+        # Parse CXF file using our robust XML parser
         try:
-            import colour_cxf
-        except ImportError:
+            result = parse_cxf_xml(content)
+        except ET.ParseError as e:
             raise HTTPException(
-                status_code=500,
-                detail="colour-cxf library not installed. Run: pip install colour-cxf"
+                status_code=400,
+                detail=f"Invalid XML in CXF file: {str(e)}"
             )
-        
-        # Parse CXF file
-        try:
-            cxf = colour_cxf.read_cxf(content)
         except Exception as e:
             raise HTTPException(
                 status_code=400,
                 detail=f"Failed to parse CXF file: {str(e)}"
             )
         
-        # Extract colors
-        colors = []
+        colors = result.get('colors', [])
+        file_info = result.get('file_info', {})
         
-        # Check if we have an object collection
-        if hasattr(cxf, 'object_collection') and cxf.object_collection:
-            objects = cxf.object_collection.objects if hasattr(cxf.object_collection, 'objects') else []
-            
-            for obj in objects:
-                color_data = {
-                    "name": getattr(obj, 'name', None) or getattr(obj, 'id', f"Color {len(colors) + 1}"),
-                    "id": getattr(obj, 'id', None),
-                }
-                
-                # Try to extract Lab values
-                lab_found = False
-                
-                # Check for color values
-                if hasattr(obj, 'color_values') and obj.color_values:
-                    cv = obj.color_values
-                    
-                    # Direct Lab values
-                    if hasattr(cv, 'lab') and cv.lab:
-                        lab = cv.lab
-                        color_data["L"] = round(float(getattr(lab, 'l', getattr(lab, 'L', 0))), 2)
-                        color_data["a"] = round(float(getattr(lab, 'a', 0)), 2)
-                        color_data["b"] = round(float(getattr(lab, 'b', 0)), 2)
-                        lab_found = True
-                    
-                    # Check for spectral data (would need conversion)
-                    elif hasattr(cv, 'spectral') and cv.spectral:
-                        # Spectral data requires proper conversion with illuminant/observer
-                        # This is complex - for now, skip and note it
-                        color_data["spectral_data"] = True
-                        color_data["note"] = "Spectral data present - Lab conversion pending"
-                    
-                    # Check for RGB values
-                    if hasattr(cv, 'rgb') and cv.rgb:
-                        rgb = cv.rgb
-                        r = int(getattr(rgb, 'r', getattr(rgb, 'R', 0)))
-                        g = int(getattr(rgb, 'g', getattr(rgb, 'G', 0)))
-                        b_val = int(getattr(rgb, 'b', getattr(rgb, 'B', 0)))
-                        color_data["rgb"] = [r, g, b_val]
-                        
-                        # If no Lab, convert RGB to Lab
-                        if not lab_found:
-                            lab = rgb_to_lab(r, g, b_val)
-                            color_data["L"] = lab[0]
-                            color_data["a"] = lab[1]
-                            color_data["b"] = lab[2]
-                            color_data["converted_from"] = "rgb"
-                            lab_found = True
-                    
-                    # Check for CMYK values
-                    if hasattr(cv, 'cmyk') and cv.cmyk:
-                        cmyk = cv.cmyk
-                        c = float(getattr(cmyk, 'c', getattr(cmyk, 'C', 0)))
-                        m = float(getattr(cmyk, 'm', getattr(cmyk, 'M', 0)))
-                        y = float(getattr(cmyk, 'y', getattr(cmyk, 'Y', 0)))
-                        k = float(getattr(cmyk, 'k', getattr(cmyk, 'K', 0)))
-                        color_data["cmyk"] = [c, m, y, k]
-                
-                # Only add colors that have Lab values
-                if lab_found or "L" in color_data:
-                    colors.append(color_data)
-        
-        # Get file info if available
-        file_info = {}
-        if hasattr(cxf, 'file_information') and cxf.file_information:
-            fi = cxf.file_information
-            file_info = {
-                "creator": getattr(fi, 'creator', None),
-                "description": getattr(fi, 'description', None),
-                "creation_date": str(getattr(fi, 'creation_date', None)) if hasattr(fi, 'creation_date') else None
-            }
+        if not colors:
+            raise HTTPException(
+                status_code=400,
+                detail="No colors with Lab values found in CXF file. The file may contain only spectral data or use an unsupported format."
+            )
         
         return {
             "success": True,
@@ -2455,7 +2573,8 @@ async def import_cxf_file(file: UploadFile = File(...)):
             "file_info": file_info,
             "colors": colors,
             "count": len(colors),
-            "note": "Lab values are in D50 illuminant (ICC PCS standard)"
+            "note": "Lab values are in D50 illuminant (ICC PCS standard)",
+            "parser": "xml-native"
         }
         
     except HTTPException:
