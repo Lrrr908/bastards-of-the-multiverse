@@ -2862,8 +2862,10 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
         output.write(struct.pack('>H', 0x0001))  # Block type: Color Entry (2 bytes)
         
         # Prepare color name
+        # ASE format: name length is the number of UTF-16 characters (NOT bytes)
+        # The null terminator is written separately and NOT counted in the length
         color_name_encoded = name.encode('utf-16-be')
-        name_length_field = len(name) + 1  # +1 for null terminator
+        name_length_field = len(name)  # Character count, excluding null terminator
         
         if color_mode == 'lab':
             # Export Lab values directly (device-independent, most accurate)
@@ -2900,10 +2902,10 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             # Color space: 'LAB ' (4 bytes - note the trailing space is important!)
             output.write(b'LAB ')
             
-            # Write normalized Lab values as floats (0.0-1.0 range)
-            output.write(struct.pack('>f', L_normalized))  # L (4 bytes): 0.0-1.0
-            output.write(struct.pack('>f', a_normalized))  # a (4 bytes): 0.0-1.0
-            output.write(struct.pack('>f', b_normalized))  # b (4 bytes): 0.0-1.0
+            # Write normalized Lab values as floats
+            output.write(struct.pack('>f', L_normalized))  # L (4 bytes): 0.0 to 1.0
+            output.write(struct.pack('>f', a_normalized))  # a (4 bytes): -1.0 to +1.0
+            output.write(struct.pack('>f', b_normalized))  # b (4 bytes): -1.0 to +1.0
             
         elif color_mode == 'cmyk':
             # Convert Lab(D50) to CMYK using LittleCMS with GRACoL
