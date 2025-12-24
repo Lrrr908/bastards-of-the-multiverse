@@ -988,17 +988,57 @@ def convert_color(payload: dict):
                 }
             }
         
-        # Handle CMYK input
+        # Handle CMYK input - use LittleCMS with GRACoL profile for accurate conversion
         elif "cmyk" in payload:
             c, m, y, k = payload["cmyk"]
             
-            # Simple CMYK to RGB conversion (0–100 to 0–255)
-            r = int(255 * (1 - c / 100.0) * (1 - k / 100.0))
-            g = int(255 * (1 - m / 100.0) * (1 - k / 100.0))
-            b_val = int(255 * (1 - y / 100.0) * (1 - k / 100.0))
+            # Use LittleCMS for CMYK -> Lab conversion via GRACoL profile
+            # This is the industry-standard way to convert CMYK to Lab
+            try:
+                from PIL import ImageCms, Image as PilImage
+                
+                if not GRACOL_PROFILE_PATH.exists():
+                    raise RuntimeError(f"GRACoL profile not found at {GRACOL_PROFILE_PATH}")
+                
+                lab_profile = ImageCms.createProfile("LAB")
+                cmyk_profile = ImageCms.getOpenProfile(str(GRACOL_PROFILE_PATH))
+                
+                # CMYK 0-100 to 0-255
+                C_byte = int((c / 100.0) * 255)
+                M_byte = int((m / 100.0) * 255)
+                Y_byte = int((y / 100.0) * 255)
+                K_byte = int((k / 100.0) * 255)
+                
+                cmyk_img = PilImage.new("CMYK", (1, 1), (C_byte, M_byte, Y_byte, K_byte))
+                
+                transform = ImageCms.buildTransformFromOpenProfiles(
+                    cmyk_profile,
+                    lab_profile,
+                    "CMYK",
+                    "LAB",
+                    renderingIntent=rendering_intent
+                )
+                
+                lab_img = ImageCms.applyTransform(cmyk_img, transform)
+                L_byte, a_byte, b_byte = lab_img.getpixel((0, 0))
+                
+                # Convert from 8-bit Lab to standard Lab range
+                L = (L_byte / 255.0) * 100
+                a = a_byte - 128
+                b_val = b_byte - 128
+                
+                lab = (round(L, 2), round(a, 2), round(b_val, 2))
+                
+            except ImportError as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"LittleCMS (PIL/ImageCms) is required for CMYK conversion: {str(e)}"
+                )
             
-            lab = rgb_to_lab(r, g, b_val)
-            hex_color = rgb_to_hex(r, g, b_val)
+            # Lab -> RGB for hex preview (using D50 to D65 Bradford adaptation)
+            r, g, b_rgb = lab_to_rgb(lab[0], lab[1], lab[2])
+            hex_color = rgb_to_hex(r, g, b_rgb)
+            
             cmyk_equiv = [
                 float(round(c, 1)),
                 float(round(m, 1)),
@@ -1014,13 +1054,13 @@ def convert_color(payload: dict):
                 "success": True,
                 "lab": list(lab),
                 "hex": hex_color,
-                "rgb": [r, g, b_val],
+                "rgb": [r, g, b_rgb],
                 "cmyk": [c, m, y, k],
                 "gamut": {
                     "inGamut": gamut_info.get("inGamut", True),
                     "cmykEquivalent": cmyk_equiv,
                     "deltaE": gamut_info.get("deltaE"),
-                    "method": gamut_info.get("method", "LittleCMS")
+                    "method": "LittleCMS_GRACoL2013"
                 }
             }
         
