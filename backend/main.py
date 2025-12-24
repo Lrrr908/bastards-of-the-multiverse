@@ -2414,12 +2414,17 @@ def parse_cxf_xml(content: bytes) -> dict:
             tag_map[tag_lower].append(elem)
     
     def find_by_tags(*tag_names):
-        """Find all elements matching any of the tag names (case-insensitive)."""
+        """Find all elements matching any of the tag names (case-insensitive), deduplicated."""
+        seen = set()
         results = []
         for tag in tag_names:
             tag_lower = tag.lower()
             if tag_lower in tag_map:
-                results.extend(tag_map[tag_lower])
+                for elem in tag_map[tag_lower]:
+                    elem_id = id(elem)
+                    if elem_id not in seen:
+                        seen.add(elem_id)
+                        results.append(elem)
         return results
     
     def find_child(parent, *tag_names):
@@ -2550,7 +2555,7 @@ def parse_cxf_xml(content: bytes) -> dict:
         if any(file_info.values()):
             break
     
-    # Find all color objects
+    # Find all color objects (deduplication handled in find_by_tags)
     objects = find_by_tags(
         'Object', 'Color', 'ColorObject', 'Sample', 'Swatch',
         'ColorSwatch', 'ColorEntry', 'Entry', 'ColorDef',
