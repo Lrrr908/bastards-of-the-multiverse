@@ -2875,13 +2875,15 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             # DEBUG: Show Lab values
             print(f"  -> Lab (raw): L={L_val:.2f}, a={a_val:.2f}, b={b_val:.2f}")
             
-            # Adobe ASE format expects Lab values normalized to 0.0-1.0 range:
+            # Adobe ASE format expects Lab values normalized:
             # L: 0-100 → 0.0-1.0 (divide by 100)
-            # a: -128 to +127 → 0.0-1.0 (add 128, divide by 255)
-            # b: -128 to +127 → 0.0-1.0 (add 128, divide by 255)
+            # a: -128 to +127 → -1.0 to +1.0 (divide by 128)
+            # b: -128 to +127 → -1.0 to +1.0 (divide by 128)
+            # 
+            # NOTE: a and b use signed range (-1 to +1), not unsigned (0 to 1)!
             L_normalized = L_val / 100.0
-            a_normalized = (a_val + 128.0) / 255.0
-            b_normalized = (b_val + 128.0) / 255.0
+            a_normalized = a_val / 128.0
+            b_normalized = b_val / 128.0
             
             print(f"  -> Lab (normalized): L={L_normalized:.4f}, a={a_normalized:.4f}, b={b_normalized:.4f}")
             
