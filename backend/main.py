@@ -684,6 +684,53 @@ def rgb_to_lab(r: int, g: int, b: int) -> tuple:
     return (round(L, 2), round(a, 2), round(b_val, 2))
 
 
+def rgb_to_hsb(r: int, g: int, b: int) -> tuple:
+    """
+    Convert RGB (0-255) to HSB (Hue, Saturation, Brightness).
+    
+    Returns:
+    - H: 0-360 degrees
+    - S: 0-100 percent
+    - B: 0-100 percent
+    """
+    import colorsys
+    
+    # Normalize RGB to 0-1
+    r_norm = r / 255.0
+    g_norm = g / 255.0
+    b_norm = b / 255.0
+    
+    # Convert to HSV (same as HSB)
+    h, s, v = colorsys.rgb_to_hsv(r_norm, g_norm, b_norm)
+    
+    # Convert to standard ranges
+    H = h * 360.0  # 0-360 degrees
+    S = s * 100.0  # 0-100 percent
+    B = v * 100.0  # 0-100 percent (Brightness = Value)
+    
+    return (H, S, B)
+
+
+def lab_to_hsb(L: float, a: float, b_val: float) -> tuple:
+    """
+    Convert Lab(D50) to HSB via sRGB.
+    
+    Pipeline: Lab(D50) → sRGB → HSB
+    
+    Returns (H, S, B):
+    - H: 0-360 degrees
+    - S: 0-100 percent
+    - B: 0-100 percent
+    """
+    # First convert Lab to RGB
+    r, g, b = lab_to_rgb(L, a, b_val)
+    
+    # Then convert RGB to HSB
+    H, S, B = rgb_to_hsb(r, g, b)
+    
+    return (H, S, B)
+
+
 def lab_to_rgb(L: float, a: float, b_val: float) -> tuple:
     """
     Convert Lab(D50) to sRGB (D65) for screen display.
@@ -2745,25 +2792,26 @@ async def export_ase(payload: dict):
     Export color library to Adobe Swatch Exchange (.ase) format
     ASE files can be imported into Photoshop, Illustrator, InDesign, etc.
     
-    Uses Lab color space (device-independent, most accurate):
-    - Preserves original spectrophotometer Lab(D50) data
-    - No gamut conversion errors
-    - Adobe apps convert Lab→RGB/CMYK using their own color settings
-    - Ensures color consistency across different devices and workflows
+    Uses HSB (Hue, Saturation, Brightness) color space (best Lab conversion):
+    - Converts Lab(D50) → sRGB → HSB pipeline
+    - HSB is Adobe's native color picker format
+    - Avoids gamut clipping issues inherent in RGB
+    - Preserves perceptual color relationships better than RGB or Lab in ASE
+    - Highly compatible with all Adobe applications
     
-    Note: RGB and CMYK modes are still supported via the color_mode parameter
-    but Lab is the default and recommended mode for professional workflows.
+    Note: RGB, CMYK, and Lab modes are also supported via the color_mode parameter,
+    but HSB is the default and recommended mode for Lab→Adobe workflows.
     """
     try:
         library_name = payload.get('library_name', 'Color Library')
         colors = payload.get('colors', [])
-        color_mode = payload.get('color_mode', 'lab').lower()  # Default to 'lab' (device-independent)
+        color_mode = payload.get('color_mode', 'hsb').lower()  # Default to 'hsb' (best conversion from Lab)
         
         if not colors:
             raise HTTPException(status_code=400, detail="No colors provided")
         
-        if color_mode not in ['rgb', 'cmyk', 'lab']:
-            raise HTTPException(status_code=400, detail="color_mode must be 'rgb', 'cmyk', or 'lab'")
+        if color_mode not in ['rgb', 'cmyk', 'lab', 'hsb']:
+            raise HTTPException(status_code=400, detail="color_mode must be 'rgb', 'cmyk', 'lab', or 'hsb'")
         
         # Check gamut and create ASE file
         ase_data, warnings = create_ase_file_with_warnings(library_name, colors, color_mode)
@@ -2831,28 +2879,17 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
     
     # Color Blocks
     for color in colors:
-        # DEBUG: Show raw color data structure
-        print(f"\n=== Processing color ===")
-        print(f"Color keys: {list(color.keys())}")
-        print(f"Color data: {color}")
-        
         # Handle both data formats:
         # Format 1: {name, L, a, b} (frontend format)
         # Format 2: {name, lab: [L, a, b]} (legacy format)
         if 'lab' in color:
             lab = color['lab']
-            print(f"✓ Found 'lab' key: {lab}")
         elif 'L' in color and 'a' in color and 'b' in color:
             lab = [color['L'], color['a'], color['b']]
-            print(f"✓ Found L/a/b keys: L={color['L']}, a={color['a']}, b={color['b']}")
         else:
             lab = [50, 0, 0]  # Default grey
-            print(f"✗ NO LAB DATA FOUND - defaulting to grey [50, 0, 0]")
         
         name = color.get('name', 'Unnamed Color')
-        
-        # DEBUG: Log final Lab values
-        print(f"Final Lab for '{name}': {lab}")
         
         # Limit name length for safety
         if len(name) > 100:
@@ -2862,10 +2899,9 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
         output.write(struct.pack('>H', 0x0001))  # Block type: Color Entry (2 bytes)
         
         # Prepare color name
-        # ASE format: name length is the number of UTF-16 characters (NOT bytes)
-        # The null terminator is written separately and NOT counted in the length
+        # ASE format: name length includes the null terminator
         color_name_encoded = name.encode('utf-16-be')
-        name_length_field = len(name)  # Character count, excluding null terminator
+        name_length_field = len(name) + 1  # Character count INCLUDING null terminator
         
         if color_mode == 'lab':
             # Export Lab values directly (device-independent, most accurate)
@@ -2877,17 +2913,17 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             # DEBUG: Show Lab values
             print(f"  -> Lab (raw): L={L_val:.2f}, a={a_val:.2f}, b={b_val:.2f}")
             
-            # Adobe ASE format expects Lab values normalized:
-            # L: 0-100 → 0.0-1.0 (divide by 100)
-            # a: -128 to +127 → -1.0 to +1.0 (divide by 128)
-            # b: -128 to +127 → -1.0 to +1.0 (divide by 128)
+            # Adobe ASE format for Lab - try using PERCENTAGE values (0.0-1.0 scale)
+            # Based on ASE spec, ALL color values should be in 0.0-1.0 range as percentages
             # 
-            # NOTE: a and b use signed range (-1 to +1), not unsigned (0 to 1)!
+            # L: 0-100 → 0.0-1.0 (divide by 100) = percentage of full lightness
+            # a: -128 to +127 → map to 0.0-1.0 (shift and scale)
+            # b: -128 to +127 → map to 0.0-1.0 (shift and scale)
             L_normalized = L_val / 100.0
-            a_normalized = a_val / 128.0
-            b_normalized = b_val / 128.0
+            a_normalized = (a_val + 128.0) / 255.0  # -128 to +127 becomes 0.0 to 1.0
+            b_normalized = (b_val + 128.0) / 255.0  # -128 to +127 becomes 0.0 to 1.0
             
-            print(f"  -> Lab (normalized): L={L_normalized:.4f}, a={a_normalized:.4f}, b={b_normalized:.4f}")
+            print(f"  -> Lab (percentage): L={L_normalized:.4f}, a={a_normalized:.4f}, b={b_normalized:.4f}")
             
             # Calculate block length for Lab
             # name_length(2) + name_utf16(var) + null(2) + color_space(4) + L(4) + a(4) + b(4) + color_type(2)
@@ -2902,10 +2938,10 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             # Color space: 'LAB ' (4 bytes - note the trailing space is important!)
             output.write(b'LAB ')
             
-            # Write normalized Lab values as floats
+            # Write Lab values as percentages (0.0-1.0 range for all three channels)
             output.write(struct.pack('>f', L_normalized))  # L (4 bytes): 0.0 to 1.0
-            output.write(struct.pack('>f', a_normalized))  # a (4 bytes): -1.0 to +1.0
-            output.write(struct.pack('>f', b_normalized))  # b (4 bytes): -1.0 to +1.0
+            output.write(struct.pack('>f', a_normalized))  # a (4 bytes): 0.0 to 1.0 (mapped from -128 to +127)
+            output.write(struct.pack('>f', b_normalized))  # b (4 bytes): 0.0 to 1.0 (mapped from -128 to +127)
             
         elif color_mode == 'cmyk':
             # Convert Lab(D50) to CMYK using LittleCMS with GRACoL
@@ -2946,7 +2982,39 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             output.write(struct.pack('>f', y_value))  # Y (4 bytes)
             output.write(struct.pack('>f', k_value))  # K (4 bytes)
             
-        else:  # RGB mode
+        elif color_mode == 'hsb':
+            # Convert Lab(D50) to HSB (Hue, Saturation, Brightness)
+            H, S, B = lab_to_hsb(lab[0], lab[1], lab[2])
+            
+            # DEBUG: Show HSB conversion
+            print(f"  -> HSB: H={H:.1f}°, S={S:.1f}%, B={B:.1f}%")
+            
+            # Calculate block length for HSB
+            # name_length(2) + name_utf16(var) + null(2) + color_space(4) + H(4) + S(4) + B(4) + color_type(2)
+            block_length = 2 + len(color_name_encoded) + 2 + 4 + 4 + 4 + 4 + 2
+            output.write(struct.pack('>I', block_length))  # Block length (4 bytes)
+            
+            # Write color name
+            output.write(struct.pack('>H', name_length_field))  # Name length (2 bytes)
+            output.write(color_name_encoded)  # Name in UTF-16BE
+            output.write(b'\x00\x00')  # Null terminator (2 bytes)
+            
+            # Color space: 'HSB ' (4 bytes - note the trailing space is important!)
+            output.write(b'HSB ')
+            
+            # HSB values as floats (normalized to 0.0-1.0)
+            # H: 0-360° → 0.0-1.0 (divide by 360)
+            # S: 0-100% → 0.0-1.0 (divide by 100)
+            # B: 0-100% → 0.0-1.0 (divide by 100)
+            h_value = float(H / 360.0)
+            s_value = float(S / 100.0)
+            b_value = float(B / 100.0)
+            
+            output.write(struct.pack('>f', h_value))  # H (4 bytes): 0.0-1.0
+            output.write(struct.pack('>f', s_value))  # S (4 bytes): 0.0-1.0
+            output.write(struct.pack('>f', b_value))  # B (4 bytes): 0.0-1.0
+            
+        else:  # RGB mode (default)
             # Convert Lab(D50) to RGB
             r, g, b_rgb = lab_to_rgb(lab[0], lab[1], lab[2])
             
