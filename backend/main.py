@@ -2809,6 +2809,9 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb') ->
         lab = color.get('lab', [50, 0, 0])
         name = color.get('name', 'Unnamed Color')
         
+        # DEBUG: Log what we're receiving
+        print(f"ASE Export - {name}: Lab = {lab}")
+        
         # Limit name length for safety
         if len(name) > 100:
             name = name[:100]
