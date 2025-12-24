@@ -2819,19 +2819,15 @@ def create_ase_file(library_name: str, colors: list) -> bytes:
         output.write(b'LAB ')
         
         # Lab values as floats
-        # According to ASE spec:
-        # L: 0-100 range (store as percentage 0.0-1.0)
-        # a: -128 to 127, but stored as 0-100 percentage  
-        # b: -128 to 127, but stored as 0-100 percentage
+        # ASE format for Lab:
+        # L: 0-100 (stored as percentage 0.0-1.0)
+        # a: -128 to 127 (stored as actual value, not normalized)
+        # b: -128 to 127 (stored as actual value, not normalized)
         
-        # For Lab in ASE, values are:
-        # L: 0-100 (as float percentage, so 0.0-1.0)
-        # a: -128 to 127 (as float percentage, so -1.0 to 1.0)  
-        # b: -128 to 127 (as float percentage, so -1.0 to 1.0)
-        
-        L_value = float(lab[0] / 100.0)  # Convert 0-100 to 0.0-1.0
-        a_value = float(lab[1] / 100.0)  # Convert -128-127 to approximately -1.28 to 1.27
-        b_value = float(lab[2] / 100.0)  # Convert -128-127 to approximately -1.28 to 1.27
+        # Adobe uses the full Lab range, not normalized percentages for a/b
+        L_value = float(lab[0] / 100.0)  # Convert 0-100 to 0.0-1.0 percentage
+        a_value = float(lab[1])  # Use actual Lab a value (-128 to 127)
+        b_value = float(lab[2])  # Use actual Lab b value (-128 to 127)
         
         output.write(struct.pack('>f', L_value))  # L (4 bytes)
         output.write(struct.pack('>f', a_value))  # a (4 bytes)
