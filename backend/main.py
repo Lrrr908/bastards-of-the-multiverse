@@ -2555,12 +2555,51 @@ def parse_cxf_xml(content: bytes) -> dict:
         if any(file_info.values()):
             break
     
-    # Find all color objects (deduplication handled in find_by_tags)
-    objects = find_by_tags(
-        'Object', 'Color', 'ColorObject', 'Sample', 'Swatch',
-        'ColorSwatch', 'ColorEntry', 'Entry', 'ColorDef',
-        'SpotColor', 'NamedColor'
-    )
+    # Find color objects - CXF files have two main sections:
+    # 1. Resources/ColorSpecifications - defines color specs (we want to SKIP these)
+    # 2. ObjectCollection - the actual color objects (we want THESE)
+    
+    object_tags = {'object', 'color', 'colorobject', 'sample', 'swatch', 
+                   'colorswatch', 'colorentry', 'spotcolor', 'namedcolor'}
+    
+    # Build a set of elements that are inside Resources/Specifications (to exclude)
+    exclude_elements = set()
+    for container in find_by_tags('Resources', 'ColorSpecification', 'ColorSpecifications', 
+                                   'Specifications', 'DeviceColorValues'):
+        for elem in container.iter():
+            exclude_elements.add(id(elem))
+    
+    # Find ObjectCollection first (preferred location for color objects)
+    objects = []
+    seen_ids = set()
+    
+    object_collections = find_by_tags('ObjectCollection', 'ColorCollection', 'Objects', 
+                                       'Colors', 'Swatches', 'Library', 'Palette')
+    
+    if object_collections:
+        # Only get objects from ObjectCollection containers
+        for collection in object_collections:
+            # Skip if this collection is inside Resources
+            if id(collection) in exclude_elements:
+                continue
+            for elem in collection.iter():
+                if elem is collection:
+                    continue
+                tag_lower = elem.tag.lower() if isinstance(elem.tag, str) else ''
+                if tag_lower in object_tags:
+                    elem_id = id(elem)
+                    if elem_id not in seen_ids and elem_id not in exclude_elements:
+                        seen_ids.add(elem_id)
+                        objects.append(elem)
+    else:
+        # Fallback: get all objects not in Resources
+        for tag in object_tags:
+            if tag in tag_map:
+                for elem in tag_map[tag]:
+                    elem_id = id(elem)
+                    if elem_id not in seen_ids and elem_id not in exclude_elements:
+                        seen_ids.add(elem_id)
+                        objects.append(elem)
     
     # Process each color object
     for obj in objects:
