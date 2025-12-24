@@ -2776,70 +2776,69 @@ def create_ase_file(library_name: str, colors: list) -> bytes:
     """
     Create Adobe Swatch Exchange (.ase) binary file
     Format specification: https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/#50577411_pgfId-1055819
+    
+    ASE files use big-endian byte order throughout.
+    Lab values in ASE are stored as percentages (0-100 for L, -128 to 127 for a/b converted to 0-100 scale)
     """
     output = io.BytesIO()
     
     # ASE Header
-    output.write(b'ASEF')  # Signature
-    output.write(struct.pack('>H', 1))  # Version major
-    output.write(struct.pack('>H', 0))  # Version minor
+    output.write(b'ASEF')  # Signature (4 bytes)
+    output.write(struct.pack('>H', 1))  # Version major (2 bytes)
+    output.write(struct.pack('>H', 0))  # Version minor (2 bytes)
     
-    # Number of blocks (1 group + colors)
-    num_blocks = 1 + len(colors)
-    output.write(struct.pack('>I', num_blocks))
-    
-    # Group Start Block
-    output.write(struct.pack('>H', 0xC001))  # Block type: Group Start
-    group_name_encoded = library_name.encode('utf-16-be')
-    block_length = 4 + len(group_name_encoded) + 2  # name length + name + null terminator
-    output.write(struct.pack('>I', block_length))
-    output.write(struct.pack('>H', len(library_name) + 1))  # String length (including null)
-    output.write(group_name_encoded)
-    output.write(b'\x00\x00')  # Null terminator
+    # Number of blocks (just color entries, no grouping for simplicity)
+    num_blocks = len(colors)
+    output.write(struct.pack('>I', num_blocks))  # Number of blocks (4 bytes)
     
     # Color Blocks
     for color in colors:
         lab = color.get('lab', [50, 0, 0])
         name = color.get('name', 'Unnamed Color')
         
+        # Limit name length for safety
+        if len(name) > 100:
+            name = name[:100]
+        
         # Color block type
-        output.write(struct.pack('>H', 0x0001))  # Block type: Color Entry
+        output.write(struct.pack('>H', 0x0001))  # Block type: Color Entry (2 bytes)
         
-        # Color name
+        # Calculate block length first
+        # name_length(2) + name_utf16(var) + null(2) + color_space(4) + L(4) + a(4) + b(4) + color_type(2)
         color_name_encoded = name.encode('utf-16-be')
-        name_length_field = len(name) + 1
-        
-        # Calculate block length
-        # name_length(2) + name(var) + null(2) + color_model(4) + L(4) + a(4) + b(4) + color_type(2)
         block_length = 2 + len(color_name_encoded) + 2 + 4 + 4 + 4 + 4 + 2
-        output.write(struct.pack('>I', block_length))
+        output.write(struct.pack('>I', block_length))  # Block length (4 bytes)
         
         # Write color name
-        output.write(struct.pack('>H', name_length_field))
-        output.write(color_name_encoded)
-        output.write(b'\x00\x00')  # Null terminator
+        name_length_field = len(name) + 1  # +1 for null terminator
+        output.write(struct.pack('>H', name_length_field))  # Name length (2 bytes)
+        output.write(color_name_encoded)  # Name in UTF-16BE
+        output.write(b'\x00\x00')  # Null terminator (2 bytes)
         
-        # Color model: 'LAB ' (note the space)
+        # Color space: 'LAB ' (4 bytes - note the trailing space is important!)
         output.write(b'LAB ')
         
-        # Lab values (as floats, normalized to 0-1 range for ASE)
-        # L: 0-100 -> 0-1
-        # a: -128 to 127 -> -1 to 1  
-        # b: -128 to 127 -> -1 to 1
-        L_normalized = lab[0] / 100.0
-        a_normalized = lab[1] / 128.0
-        b_normalized = lab[2] / 128.0
+        # Lab values as floats
+        # According to ASE spec:
+        # L: 0-100 range (store as percentage 0.0-1.0)
+        # a: -128 to 127, but stored as 0-100 percentage  
+        # b: -128 to 127, but stored as 0-100 percentage
         
-        output.write(struct.pack('>f', L_normalized))
-        output.write(struct.pack('>f', a_normalized))
-        output.write(struct.pack('>f', b_normalized))
+        # For Lab in ASE, values are:
+        # L: 0-100 (as float percentage, so 0.0-1.0)
+        # a: -128 to 127 (as float percentage, so -1.0 to 1.0)  
+        # b: -128 to 127 (as float percentage, so -1.0 to 1.0)
         
-        # Color type: 0 = Global, 1 = Spot, 2 = Normal
+        L_value = float(lab[0] / 100.0)  # Convert 0-100 to 0.0-1.0
+        a_value = float(lab[1] / 100.0)  # Convert -128-127 to approximately -1.28 to 1.27
+        b_value = float(lab[2] / 100.0)  # Convert -128-127 to approximately -1.28 to 1.27
+        
+        output.write(struct.pack('>f', L_value))  # L (4 bytes)
+        output.write(struct.pack('>f', a_value))  # a (4 bytes)
+        output.write(struct.pack('>f', b_value))  # b (4 bytes)
+        
+        # Color type: 0 = Global, 1 = Spot, 2 = Normal (2 bytes)
         output.write(struct.pack('>H', 2))  # Normal color
-    
-    # Group End Block
-    output.write(struct.pack('>H', 0xC002))  # Block type: Group End
-    output.write(struct.pack('>I', 0))  # Block length: 0
     
     return output.getvalue()
 
