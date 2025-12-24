@@ -2744,23 +2744,31 @@ async def export_ase(payload: dict):
     """
     Export color library to Adobe Swatch Exchange (.ase) format
     ASE files can be imported into Photoshop, Illustrator, InDesign, etc.
+    Supports both RGB and CMYK color modes.
     """
     try:
         library_name = payload.get('library_name', 'Color Library')
         colors = payload.get('colors', [])
+        color_mode = payload.get('color_mode', 'rgb').lower()  # 'rgb' or 'cmyk'
         
         if not colors:
             raise HTTPException(status_code=400, detail="No colors provided")
         
+        if color_mode not in ['rgb', 'cmyk']:
+            raise HTTPException(status_code=400, detail="color_mode must be 'rgb' or 'cmyk'")
+        
         # Create ASE file in memory
-        ase_data = create_ase_file(library_name, colors)
+        ase_data = create_ase_file(library_name, colors, color_mode)
         
         # Return as downloadable file
+        mode_label = color_mode.upper()
+        filename = f"{library_name.replace(' ', '_')}_{mode_label}_colors.ase"
+        
         return StreamingResponse(
             io.BytesIO(ase_data),
             media_type="application/octet-stream",
             headers={
-                "Content-Disposition": f"attachment; filename={library_name.replace(' ', '_')}_colors.ase"
+                "Content-Disposition": f"attachment; filename={filename}"
             }
         )
         
@@ -2772,13 +2780,18 @@ async def export_ase(payload: dict):
             detail=f"ASE export failed: {str(e)}"
         )
 
-def create_ase_file(library_name: str, colors: list) -> bytes:
+def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb') -> bytes:
     """
     Create Adobe Swatch Exchange (.ase) binary file
     Format specification: https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/#50577411_pgfId-1055819
     
     ASE files use big-endian byte order throughout.
-    Lab values in ASE are stored as percentages (0-100 for L, -128 to 127 for a/b converted to 0-100 scale)
+    Supports both RGB and CMYK color modes.
+    
+    Args:
+        library_name: Name of the swatch library
+        colors: List of color dicts with 'lab' and 'name' keys
+        color_mode: 'rgb' or 'cmyk'
     """
     output = io.BytesIO()
     
@@ -2803,35 +2816,64 @@ def create_ase_file(library_name: str, colors: list) -> bytes:
         # Color block type
         output.write(struct.pack('>H', 0x0001))  # Block type: Color Entry (2 bytes)
         
-        # Calculate block length first
-        # name_length(2) + name_utf16(var) + null(2) + color_space(4) + L(4) + a(4) + b(4) + color_type(2)
+        # Prepare color name
         color_name_encoded = name.encode('utf-16-be')
-        block_length = 2 + len(color_name_encoded) + 2 + 4 + 4 + 4 + 4 + 2
-        output.write(struct.pack('>I', block_length))  # Block length (4 bytes)
-        
-        # Write color name
         name_length_field = len(name) + 1  # +1 for null terminator
-        output.write(struct.pack('>H', name_length_field))  # Name length (2 bytes)
-        output.write(color_name_encoded)  # Name in UTF-16BE
-        output.write(b'\x00\x00')  # Null terminator (2 bytes)
         
-        # Color space: 'LAB ' (4 bytes - note the trailing space is important!)
-        output.write(b'LAB ')
-        
-        # Lab values as floats
-        # ASE format for Lab:
-        # L: 0-100 (stored as percentage 0.0-1.0)
-        # a: -128 to 127 (stored as actual value, not normalized)
-        # b: -128 to 127 (stored as actual value, not normalized)
-        
-        # Adobe uses the full Lab range, not normalized percentages for a/b
-        L_value = float(lab[0] / 100.0)  # Convert 0-100 to 0.0-1.0 percentage
-        a_value = float(lab[1])  # Use actual Lab a value (-128 to 127)
-        b_value = float(lab[2])  # Use actual Lab b value (-128 to 127)
-        
-        output.write(struct.pack('>f', L_value))  # L (4 bytes)
-        output.write(struct.pack('>f', a_value))  # a (4 bytes)
-        output.write(struct.pack('>f', b_value))  # b (4 bytes)
+        if color_mode == 'cmyk':
+            # Convert Lab(D50) to CMYK using LittleCMS with GRACoL
+            cmyk_values = lab_to_cmyk_via_gracol(lab[0], lab[1], lab[2])
+            c, m, y, k = cmyk_values
+            
+            # Calculate block length for CMYK
+            # name_length(2) + name_utf16(var) + null(2) + color_space(4) + C(4) + M(4) + Y(4) + K(4) + color_type(2)
+            block_length = 2 + len(color_name_encoded) + 2 + 4 + 4 + 4 + 4 + 4 + 2
+            output.write(struct.pack('>I', block_length))  # Block length (4 bytes)
+            
+            # Write color name
+            output.write(struct.pack('>H', name_length_field))  # Name length (2 bytes)
+            output.write(color_name_encoded)  # Name in UTF-16BE
+            output.write(b'\x00\x00')  # Null terminator (2 bytes)
+            
+            # Color space: 'CMYK' (4 bytes)
+            output.write(b'CMYK')
+            
+            # CMYK values as floats (0-100 converted to 0.0-1.0)
+            c_value = float(c / 100.0)
+            m_value = float(m / 100.0)
+            y_value = float(y / 100.0)
+            k_value = float(k / 100.0)
+            
+            output.write(struct.pack('>f', c_value))  # C (4 bytes)
+            output.write(struct.pack('>f', m_value))  # M (4 bytes)
+            output.write(struct.pack('>f', y_value))  # Y (4 bytes)
+            output.write(struct.pack('>f', k_value))  # K (4 bytes)
+            
+        else:  # RGB mode
+            # Convert Lab(D50) to RGB
+            r, g, b_rgb = lab_to_rgb(lab[0], lab[1], lab[2])
+            
+            # Calculate block length for RGB
+            # name_length(2) + name_utf16(var) + null(2) + color_space(4) + R(4) + G(4) + B(4) + color_type(2)
+            block_length = 2 + len(color_name_encoded) + 2 + 4 + 4 + 4 + 4 + 2
+            output.write(struct.pack('>I', block_length))  # Block length (4 bytes)
+            
+            # Write color name
+            output.write(struct.pack('>H', name_length_field))  # Name length (2 bytes)
+            output.write(color_name_encoded)  # Name in UTF-16BE
+            output.write(b'\x00\x00')  # Null terminator (2 bytes)
+            
+            # Color space: 'RGB ' (4 bytes - note the trailing space is important!)
+            output.write(b'RGB ')
+            
+            # RGB values as floats (0-255 converted to 0.0-1.0)
+            r_value = float(r / 255.0)
+            g_value = float(g / 255.0)
+            b_value = float(b_rgb / 255.0)
+            
+            output.write(struct.pack('>f', r_value))  # R (4 bytes)
+            output.write(struct.pack('>f', g_value))  # G (4 bytes)
+            output.write(struct.pack('>f', b_value))  # B (4 bytes)
         
         # Color type: 0 = Global, 1 = Spot, 2 = Normal (2 bytes)
         output.write(struct.pack('>H', 2))  # Normal color
