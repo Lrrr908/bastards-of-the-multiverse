@@ -2375,8 +2375,13 @@ def parse_cxf_xml(content: bytes) -> dict:
     
     # OPTIMIZATION: Strip ALL namespaces from the XML upfront
     # This eliminates the need for repeated namespace searches
-    xml_str = re.sub(r'\sxmlns[^=]*="[^"]*"', '', xml_str)  # Remove xmlns declarations
-    xml_str = re.sub(r'<(/?)[\w-]+:', r'<\1', xml_str)  # Remove namespace prefixes from tags
+    # 1. Remove all xmlns declarations (including default and prefixed)
+    xml_str = re.sub(r'\sxmlns(?::[a-zA-Z0-9_-]+)?="[^"]*"', '', xml_str)
+    xml_str = re.sub(r"\sxmlns(?::[a-zA-Z0-9_-]+)?='[^']*'", '', xml_str)
+    # 2. Remove namespace prefixes from element tags (e.g., <cxf:Object> -> <Object>)
+    xml_str = re.sub(r'<(/?)([a-zA-Z0-9_-]+):', r'<\1', xml_str)
+    # 3. Remove namespace prefixes from attributes (e.g., xsi:type -> type)
+    xml_str = re.sub(r'\s([a-zA-Z0-9_-]+):([a-zA-Z0-9_-]+)=', r' \2=', xml_str)
     
     # Strip XML declaration issues
     xml_str = re.sub(r'<\?xml[^?]*\?>', '', xml_str, count=1).strip()
@@ -2385,10 +2390,14 @@ def parse_cxf_xml(content: bytes) -> dict:
     # Parse XML
     try:
         root = ET.fromstring(xml_str)
-    except ET.ParseError:
+    except ET.ParseError as parse_error:
         # Try removing problematic characters
-        xml_str = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', xml_str)
-        root = ET.fromstring(xml_str)
+        xml_str_clean = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', xml_str)
+        try:
+            root = ET.fromstring(xml_str_clean)
+        except ET.ParseError:
+            # If still failing, raise the original error
+            raise parse_error
     
     colors = []
     file_info = {}
