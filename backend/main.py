@@ -7,9 +7,16 @@ All color libraries are based on real, physical materials scanned with a
 spectrophotometer. Those scans describe how a color looks in real life under
 standard lighting (D50), not how it looks on a phone or monitor.
 
-CANONICAL FORMAT: Lab(D50)
-─────────────────────────
-Every color in the system must ultimately live in Lab(D50).
+CANONICAL FORMAT: ICC PCS Lab (D50)
+───────────────────────────────────
+Lab(D50) in this system represents ICC Profile Connection Space (PCS) Lab,
+not generic Lab. This is the industry standard used by:
+  • ICC color profiles (v2 and v4)
+  • Spectrophotometer manufacturers (X-Rite, Datacolor, etc.)
+  • Print industry workflows (GRACoL, SWOP, Fogra)
+  • Adobe applications (Photoshop, Illustrator)
+
+Every color in the system must ultimately live in Lab(D50) / ICC PCS Lab.
 
 HARD RULES (NEVER VIOLATE):
 ───────────────────────────
@@ -23,7 +30,20 @@ PIPELINE:
 • Spectro scans      → Already Lab(D50), store directly
 • User HEX/RGB input → sRGB(D65) → XYZ(D65) → Bradford → XYZ(D50) → Lab(D50)
 • Screen display     → Lab(D50) → XYZ(D50) → Bradford → XYZ(D65) → sRGB (preview only)
+• CMYK input/output  → LittleCMS + GRACoL2013.icc (ICC PCS Lab as connection space)
 • All matching logic → Happens in Lab(D50)
+
+RENDERING INTENTS:
+──────────────────
+This system supports ICC rendering intents for Lab → CMYK conversions:
+  • 0 = Perceptual      - Compresses gamut, preserves relationships (photos)
+  • 1 = Relative        - Maps white point, clips out-of-gamut (default, logos)
+  • 2 = Saturation      - Maximizes saturation (business graphics)
+  • 3 = Absolute        - No white point mapping (proofing)
+
+⚠️  ΔE values WILL CHANGE across rendering intents - this is expected behavior.
+    Different intents map out-of-gamut colors differently, resulting in
+    different Lab values after the Lab → CMYK → Lab roundtrip.
 
 WHAT WE ARE NOT DOING:
 ──────────────────────
@@ -32,9 +52,17 @@ WHAT WE ARE NOT DOING:
 • We are NOT skipping white-point adaptation
 • We are NOT mixing Lab(D65) and Lab(D50) in ΔE math
 
+FUTURE CONSIDERATIONS (Optional):
+─────────────────────────────────
+• CAM02-UCS or CAM16-UCS could be explored for UI ranking experiments
+  (perceptual uniformity improvements over CIEDE2000)
+• These would be OPTIONAL and should NEVER replace Lab(D50) as storage
+• Lab(D50) / ICC PCS Lab remains the canonical storage format
+
 Think of it like this:
-  Lab(D50) = real-world color truth
+  Lab(D50) = real-world color truth (ICC PCS)
   RGB/HEX  = display approximation (best-effort preview only)
+  CMYK     = device-dependent output (requires ICC profile)
 
 ===============================================================================
 """
