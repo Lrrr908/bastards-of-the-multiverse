@@ -179,6 +179,13 @@ from fastapi.responses import StreamingResponse
 import struct
 import io
 from fastapi.middleware.cors import CORSMiddleware
+
+# Try to import swatch-exchange for proper ASE Lab spot color support
+try:
+    from swatch_exchange import Color, Swatch, SwatchExchange
+    HAS_SWATCH_EXCHANGE = True
+except ImportError:
+    HAS_SWATCH_EXCHANGE = False
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -2792,20 +2799,25 @@ async def export_ase(payload: dict):
     Export color library to Adobe Swatch Exchange (.ase) format
     ASE files can be imported into Photoshop, Illustrator, InDesign, etc.
     
-    Uses Lab color space with Spot color type (device-independent):
-    - Exports raw Lab(D50) values from spectrophotometer data
-    - Colors are marked as Spot colors (type = 1) for proper Lab handling in Adobe apps
+    Uses Lab(D50) Spot Colors (via swatch-exchange library):
+    - Exports Lab(D50) values directly from spectrophotometer data
+    - Uses the swatch-exchange library for proper ASE Lab spot color handling
+    - Colors are marked as "Spot" colors (like Pantone) for accurate representation
     - Device-independent: Adobe apps convert Lab→RGB/CMYK using their color settings
     - Preserves spectrophotometer accuracy without gamut conversion
-    - Lab values normalized to 0.0-1.0 range for ASE format
     
-    Note: RGB, CMYK, and HSB modes are also supported via the color_mode parameter,
-    but Lab (Spot) is the default for spectrophotometer-based color data.
+    Lab(D50) Illuminant:
+    - D50 is the standard illuminant for print and spectrophotometer data
+    - Matches the ICC Profile Connection Space (PCS)
+    - All spectrophotometer scans use D50
+    
+    Note: RGB and CMYK modes are also supported via the color_mode parameter,
+    but Lab(D50) Spot is the default and recommended mode for spectrophotometer data.
     """
     try:
         library_name = payload.get('library_name', 'Color Library')
         colors = payload.get('colors', [])
-        color_mode = payload.get('color_mode', 'lab').lower()  # Default to 'lab' for spot colors
+        color_mode = payload.get('color_mode', 'lab').lower()  # Default to 'lab' (using swatch-exchange library)
         
         if not colors:
             raise HTTPException(status_code=400, detail="No colors provided")
@@ -2860,12 +2872,53 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
     ASE files use big-endian byte order throughout.
     Supports Lab (device-independent), RGB (sRGB), and CMYK (GRACoL) color modes.
     
+    For Lab spot colors, uses swatch-exchange library if available for proper handling.
+    
     Args:
         library_name: Name of the swatch library
         colors: List of color dicts with {L, a, b, name} or {lab: [L,a,b], name} keys
         color_mode: 'lab', 'rgb', or 'cmyk'
         warnings: Optional list to append gamut warnings to
     """
+    # Use swatch-exchange library for Lab spot colors (proper Lab support)
+    if color_mode == 'lab' and HAS_SWATCH_EXCHANGE:
+        print("Using swatch-exchange library for Lab spot colors")
+        ase = SwatchExchange()
+        
+        for color in colors:
+            # Handle both data formats
+            if 'lab' in color:
+                lab = color['lab']
+            elif 'L' in color and 'a' in color and 'b' in color:
+                lab = [color['L'], color['a'], color['b']]
+            else:
+                lab = [50, 0, 0]
+            
+            name = color.get('name', 'Unnamed Color')
+            
+            # Limit name length for safety
+            if len(name) > 100:
+                name = name[:100]
+            
+            print(f"Adding Lab spot color: {name} - L={lab[0]:.2f}, a={lab[1]:.2f}, b={lab[2]:.2f}")
+            
+            # Create Lab spot color using swatch-exchange
+            # Lab(D50) is exactly what we have from spectrophotometer
+            spot_color = Swatch(
+                name=name,
+                color=Color(
+                    space="Lab",  # Lab color space (D50 by default)
+                    values=(lab[0], lab[1], lab[2])  # L (0-100), a (-128 to 127), b (-128 to 127)
+                ),
+                type="spot"  # Spot color (not process/CMYK)
+            )
+            
+            ase.swatches.append(spot_color)
+        
+        # Encode and return
+        return ase.encode()
+    
+    # Fallback to manual binary writing for RGB/CMYK or if swatch-exchange not available
     output = io.BytesIO()
     
     # ASE Header
@@ -2913,17 +2966,13 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             # DEBUG: Show Lab values
             print(f"  -> Lab (raw): L={L_val:.2f}, a={a_val:.2f}, b={b_val:.2f}")
             
-            # Adobe ASE format for Lab - try using PERCENTAGE values (0.0-1.0 scale)
-            # Based on ASE spec, ALL color values should be in 0.0-1.0 range as percentages
+            # Adobe ASE format for Lab Spot Colors - use RAW Lab values
+            # For Spot colors, Adobe expects the actual Lab values, not normalized
+            # L: 0-100 (as-is)
+            # a: -128 to +127 (as-is, signed)
+            # b: -128 to +127 (as-is, signed)
             # 
-            # L: 0-100 → 0.0-1.0 (divide by 100) = percentage of full lightness
-            # a: -128 to +127 → map to 0.0-1.0 (shift and scale)
-            # b: -128 to +127 → map to 0.0-1.0 (shift and scale)
-            L_normalized = L_val / 100.0
-            a_normalized = (a_val + 128.0) / 255.0  # -128 to +127 becomes 0.0 to 1.0
-            b_normalized = (b_val + 128.0) / 255.0  # -128 to +127 becomes 0.0 to 1.0
-            
-            print(f"  -> Lab (percentage): L={L_normalized:.4f}, a={a_normalized:.4f}, b={b_normalized:.4f}")
+            # This preserves the exact spectrophotometer data
             
             # Calculate block length for Lab
             # name_length(2) + name_utf16(var) + null(2) + color_space(4) + L(4) + a(4) + b(4) + color_type(2)
@@ -2938,10 +2987,12 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             # Color space: 'LAB ' (4 bytes - note the trailing space is important!)
             output.write(b'LAB ')
             
-            # Write Lab values as percentages (0.0-1.0 range for all three channels)
-            output.write(struct.pack('>f', L_normalized))  # L (4 bytes): 0.0 to 1.0
-            output.write(struct.pack('>f', a_normalized))  # a (4 bytes): 0.0 to 1.0 (mapped from -128 to +127)
-            output.write(struct.pack('>f', b_normalized))  # b (4 bytes): 0.0 to 1.0 (mapped from -128 to +127)
+            # Write RAW Lab values as floats (preserve spectrophotometer data exactly)
+            output.write(struct.pack('>f', L_val))  # L (4 bytes): 0-100
+            output.write(struct.pack('>f', a_val))  # a (4 bytes): -128 to +127 (signed)
+            output.write(struct.pack('>f', b_val))  # b (4 bytes): -128 to +127 (signed)
+            
+            print(f"  -> Lab (written to ASE): L={L_val:.2f}, a={a_val:.2f}, b={b_val:.2f}")
             
             # Color type: 1 = Spot (Lab colors should be Spot colors for proper handling)
             output.write(struct.pack('>H', 1))  # Spot color
