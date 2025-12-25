@@ -5,4 +5,3 @@ python-multipart==0.0.6
 Pillow[lcms2]>=9.0.0
 colorspacious>=0.1.2
 colour-cxf>=0.1.0
-swatch-exchange>=0.1.0
