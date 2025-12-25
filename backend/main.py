@@ -179,13 +179,6 @@ from fastapi.responses import StreamingResponse
 import struct
 import io
 from fastapi.middleware.cors import CORSMiddleware
-
-# Try to import swatch-exchange for proper ASE Lab spot color support
-try:
-    from swatch_exchange import Color, Swatch, SwatchExchange
-    HAS_SWATCH_EXCHANGE = True
-except ImportError:
-    HAS_SWATCH_EXCHANGE = False
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -2799,25 +2792,31 @@ async def export_ase(payload: dict):
     Export color library to Adobe Swatch Exchange (.ase) format
     ASE files can be imported into Photoshop, Illustrator, InDesign, etc.
     
-    Uses Lab(D50) Spot Colors (via swatch-exchange library):
-    - Exports Lab(D50) values directly from spectrophotometer data
-    - Uses the swatch-exchange library for proper ASE Lab spot color handling
-    - Colors are marked as "Spot" colors (like Pantone) for accurate representation
-    - Device-independent: Adobe apps convert Lab→RGB/CMYK using their color settings
-    - Preserves spectrophotometer accuracy without gamut conversion
+    Uses CMYK Spot Colors (best compromise for spectrophotometer data):
+    - Converts Lab(D50) → CMYK using LittleCMS with GRACoL2013 profile
+    - Colors are marked as "Spot" (type=1) for special handling (like Pantone)
+    - CMYK in ASE works reliably (tested and proven)
+    - Better than RGB for print workflows
+    - Spot color designation gives professional color treatment
     
-    Lab(D50) Illuminant:
-    - D50 is the standard illuminant for print and spectrophotometer data
-    - Matches the ICC Profile Connection Space (PCS)
-    - All spectrophotometer scans use D50
+    Why CMYK Spot instead of Lab?
+    - Lab in ASE format appears grey/pink (tested with 7+ methods including swatch-exchange library)
+    - CMYK works perfectly in ASE format
+    - Spot colors get special treatment in Adobe apps (like Pantone)
+    - GRACoL2013 profile maintains print industry standards
     
-    Note: RGB and CMYK modes are also supported via the color_mode parameter,
-    but Lab(D50) Spot is the default and recommended mode for spectrophotometer data.
+    Lab(D50) preservation:
+    - Your spectrophotometer Lab(D50) data is preserved in the database
+    - Use CXF export format for Lab(D50) preservation (ISO standard for spectro data)
+    - Use JSON export format for full data preservation
+    
+    Technical: Lab(D50) → [LittleCMS] → CMYK(GRACoL2013) → ASE Spot Color
+    This maintains professional print accuracy while working reliably in Adobe apps.
     """
     try:
         library_name = payload.get('library_name', 'Color Library')
         colors = payload.get('colors', [])
-        color_mode = payload.get('color_mode', 'lab').lower()  # Default to 'lab' (using swatch-exchange library)
+        color_mode = payload.get('color_mode', 'cmyk').lower()  # Default to 'cmyk' spot colors (best for print/spectro data)
         
         if not colors:
             raise HTTPException(status_code=400, detail="No colors provided")
@@ -2870,55 +2869,15 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
     Format specification: https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/#50577411_pgfId-1055819
     
     ASE files use big-endian byte order throughout.
-    Supports Lab (device-independent), RGB (sRGB), and CMYK (GRACoL) color modes.
-    
-    For Lab spot colors, uses swatch-exchange library if available for proper handling.
+    Supports RGB (sRGB) and CMYK (GRACoL) color modes. Lab mode is included but doesn't
+    work reliably (always appears grey or pink in Illustrator despite multiple encoding attempts).
     
     Args:
         library_name: Name of the swatch library
         colors: List of color dicts with {L, a, b, name} or {lab: [L,a,b], name} keys
-        color_mode: 'lab', 'rgb', or 'cmyk'
+        color_mode: 'rgb' or 'cmyk' (Lab is not recommended)
         warnings: Optional list to append gamut warnings to
     """
-    # Use swatch-exchange library for Lab spot colors (proper Lab support)
-    if color_mode == 'lab' and HAS_SWATCH_EXCHANGE:
-        print("Using swatch-exchange library for Lab spot colors")
-        ase = SwatchExchange()
-        
-        for color in colors:
-            # Handle both data formats
-            if 'lab' in color:
-                lab = color['lab']
-            elif 'L' in color and 'a' in color and 'b' in color:
-                lab = [color['L'], color['a'], color['b']]
-            else:
-                lab = [50, 0, 0]
-            
-            name = color.get('name', 'Unnamed Color')
-            
-            # Limit name length for safety
-            if len(name) > 100:
-                name = name[:100]
-            
-            print(f"Adding Lab spot color: {name} - L={lab[0]:.2f}, a={lab[1]:.2f}, b={lab[2]:.2f}")
-            
-            # Create Lab spot color using swatch-exchange
-            # Lab(D50) is exactly what we have from spectrophotometer
-            spot_color = Swatch(
-                name=name,
-                color=Color(
-                    space="Lab",  # Lab color space (D50 by default)
-                    values=(lab[0], lab[1], lab[2])  # L (0-100), a (-128 to 127), b (-128 to 127)
-                ),
-                type="spot"  # Spot color (not process/CMYK)
-            )
-            
-            ase.swatches.append(spot_color)
-        
-        # Encode and return
-        return ase.encode()
-    
-    # Fallback to manual binary writing for RGB/CMYK or if swatch-exchange not available
     output = io.BytesIO()
     
     # ASE Header
@@ -3036,8 +2995,8 @@ def create_ase_file(library_name: str, colors: list, color_mode: str = 'rgb', wa
             output.write(struct.pack('>f', y_value))  # Y (4 bytes)
             output.write(struct.pack('>f', k_value))  # K (4 bytes)
             
-            # Color type: 2 = Normal (CMYK colors are typically Normal)
-            output.write(struct.pack('>H', 2))  # Normal color
+            # Color type: 1 = Spot (Treat as spot colors like Pantone for special handling)
+            output.write(struct.pack('>H', 1))  # Spot color
             
         elif color_mode == 'hsb':
             # Convert Lab(D50) to HSB (Hue, Saturation, Brightness)
