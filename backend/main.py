@@ -973,6 +973,59 @@ def lab_to_cmyk_via_gracol(L: float, a: float, b: float, intent: int = 1) -> Lis
         # NO SILENT FALLBACK HERE
         raise RuntimeError(f"GRACoL CMYK conversion failed: {e}")
 
+def cmyk_to_lab_via_gracol(c: float, m: float, y: float, k: float, intent: int = 1) -> tuple:
+    """
+    Convert CMYK -> Lab(D50) using the GRACoL profile via LittleCMS.
+    
+    Args:
+        c, m, y, k: CMYK values in 0-100 range
+        intent: 0=Perceptual, 1=Relative, 2=Saturation, 3=Absolute
+    
+    Returns:
+        (L, a, b) tuple in Lab(D50) color space
+    """
+    try:
+        from PIL import ImageCms, Image as PilImage
+
+        if not GRACOL_PROFILE_PATH.exists():
+            raise RuntimeError(f"GRACoL profile not found at {GRACOL_PROFILE_PATH}")
+
+        cmyk_profile = ImageCms.getOpenProfile(str(GRACOL_PROFILE_PATH))
+        lab_profile = ImageCms.createProfile("LAB")
+
+        transform = ImageCms.buildTransformFromOpenProfiles(
+            cmyk_profile,
+            lab_profile,
+            "CMYK",
+            "LAB",
+            renderingIntent=intent
+        )
+
+        # Convert CMYK 0-100 to 0-255
+        C_byte = int((c / 100.0) * 255)
+        M_byte = int((m / 100.0) * 255)
+        Y_byte = int((y / 100.0) * 255)
+        K_byte = int((k / 100.0) * 255)
+
+        C_byte = max(0, min(255, C_byte))
+        M_byte = max(0, min(255, M_byte))
+        Y_byte = max(0, min(255, Y_byte))
+        K_byte = max(0, min(255, K_byte))
+
+        cmyk_img = PilImage.new("CMYK", (1, 1), (C_byte, M_byte, Y_byte, K_byte))
+        lab_img = ImageCms.applyTransform(cmyk_img, transform)
+        L_byte, a_byte, b_byte = lab_img.getpixel((0, 0))
+
+        # Convert 0-255 Lab to standard Lab values
+        L = (L_byte / 255.0) * 100.0
+        a = a_byte - 128
+        b = b_byte - 128
+
+        return (round(L, 2), round(a, 2), round(b, 2))
+
+    except Exception as e:
+        raise RuntimeError(f"GRACoL CMYK to Lab conversion failed: {e}")
+
 
 # -------------------------------------------------
 # Lab to Hex endpoint
@@ -3311,3 +3364,217 @@ async def import_filament_colors(file: UploadFile = File(...)):
             status_code=500,
             detail=f"Filament colors import failed: {str(e)}"
         )
+
+@app.post("/import-ase")
+async def import_ase_file(file: UploadFile = File(...)):
+    """
+    Import colors from Adobe Swatch Exchange (.ase) file.
+    
+    Supports:
+    - RGB colors (converts to LAB(D50) via sRGB)
+    - CMYK colors (converts to LAB(D50) via GRACoL)
+    - LAB colors (assumes Lab(D50) if not specified)
+    - Global and Spot color types
+    
+    Returns colors in standard LAB(D50) format.
+    """
+    try:
+        # Check file extension
+        filename_lower = file.filename.lower() if file.filename else ''
+        if not filename_lower.endswith('.ase'):
+            raise HTTPException(
+                status_code=400,
+                detail="File must have .ase extension"
+            )
+        
+        # Read file content
+        content = await file.read()
+        
+        if len(content) < 12:
+            raise HTTPException(
+                status_code=400,
+                detail="File is too small to be a valid ASE file"
+            )
+        
+        # Parse ASE file
+        try:
+            colors = parse_ase_file(content)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to parse ASE file: {str(e)}"
+            )
+        
+        if not colors:
+            raise HTTPException(
+                status_code=400,
+                detail="No colors found in ASE file"
+            )
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "colors": colors,
+            "count": len(colors),
+            "note": "Colors imported from ASE and converted to Lab(D50)"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"ASE import failed: {str(e)}"
+        )
+
+def parse_ase_file(content: bytes) -> list:
+    """
+    Parse Adobe Swatch Exchange (.ase) binary file.
+    
+    ASE format (big-endian):
+    - Header: 'ASEF' (4 bytes)
+    - Version: major (2 bytes) + minor (2 bytes)
+    - Number of blocks (4 bytes)
+    - Color blocks:
+      - Block type (2 bytes): 0x0001=color, 0xC001=group start, 0xC002=group end
+      - Block length (4 bytes)
+      - Name length (2 bytes, includes null terminator)
+      - Name (UTF-16BE)
+      - Null terminator (2 bytes)
+      - Color space (4 bytes): 'RGB ', 'CMYK', 'LAB ', 'Gray'
+      - Color values (floats, 4 bytes each)
+      - Color type (2 bytes): 0=global, 1=spot, 2=normal
+    
+    Returns list of colors in LAB(D50) format.
+    """
+    colors = []
+    offset = 0
+    
+    # Read header
+    if content[offset:offset+4] != b'ASEF':
+        raise ValueError("Invalid ASE file: missing ASEF signature")
+    offset += 4
+    
+    # Read version
+    version_major = struct.unpack('>H', content[offset:offset+2])[0]
+    version_minor = struct.unpack('>H', content[offset+2:offset+4])[0]
+    offset += 4
+    
+    # Read number of blocks
+    num_blocks = struct.unpack('>I', content[offset:offset+4])[0]
+    offset += 4
+    
+    # Parse blocks
+    for _ in range(num_blocks):
+        if offset >= len(content):
+            break
+        
+        # Read block type
+        block_type = struct.unpack('>H', content[offset:offset+2])[0]
+        offset += 2
+        
+        # Read block length
+        block_length = struct.unpack('>I', content[offset:offset+4])[0]
+        offset += 4
+        
+        # Only process color entries (0x0001), skip groups
+        if block_type != 0x0001:
+            offset += block_length
+            continue
+        
+        block_start = offset
+        
+        # Read color name length (includes null terminator)
+        name_length = struct.unpack('>H', content[offset:offset+2])[0]
+        offset += 2
+        
+        # Read color name (UTF-16BE)
+        name_bytes_length = (name_length - 1) * 2  # Exclude null terminator
+        if name_bytes_length > 0:
+            color_name = content[offset:offset+name_bytes_length].decode('utf-16-be', errors='replace')
+            offset += name_bytes_length
+        else:
+            color_name = "Unnamed"
+        
+        # Skip null terminator
+        offset += 2
+        
+        # Read color space
+        color_space = content[offset:offset+4].decode('ascii', errors='replace').strip()
+        offset += 4
+        
+        # Read color values based on color space
+        L, a, b = None, None, None
+        
+        if color_space == 'LAB':
+            # LAB values are stored as floats
+            L_val = struct.unpack('>f', content[offset:offset+4])[0]
+            a_val = struct.unpack('>f', content[offset+4:offset+8])[0]
+            b_val = struct.unpack('>f', content[offset+8:offset+12])[0]
+            offset += 12
+            
+            # Assume Lab(D50) - the standard for ASE files
+            L, a, b = L_val, a_val, b_val
+            
+        elif color_space == 'RGB':
+            # RGB values stored as floats (0.0-1.0)
+            r_val = struct.unpack('>f', content[offset:offset+4])[0]
+            g_val = struct.unpack('>f', content[offset+4:offset+8])[0]
+            b_val = struct.unpack('>f', content[offset+8:offset+12])[0]
+            offset += 12
+            
+            # Convert 0.0-1.0 to 0-255
+            r = int(r_val * 255)
+            g = int(g_val * 255)
+            b_rgb = int(b_val * 255)
+            
+            # Convert RGB to LAB(D50)
+            L, a, b = rgb_to_lab(r, g, b_rgb)
+            
+        elif color_space == 'CMYK':
+            # CMYK values stored as floats (0.0-1.0)
+            c_val = struct.unpack('>f', content[offset:offset+4])[0]
+            m_val = struct.unpack('>f', content[offset+4:offset+8])[0]
+            y_val = struct.unpack('>f', content[offset+8:offset+12])[0]
+            k_val = struct.unpack('>f', content[offset+12:offset+16])[0]
+            offset += 16
+            
+            # Convert CMYK (0-1) to percentages (0-100)
+            c = c_val * 100
+            m = m_val * 100
+            y = y_val * 100
+            k = k_val * 100
+            
+            # Convert CMYK to LAB(D50) via GRACoL
+            L, a, b = cmyk_to_lab_via_gracol(c, m, y, k)
+            
+        elif color_space == 'Gray':
+            # Grayscale stored as single float (0.0-1.0)
+            gray_val = struct.unpack('>f', content[offset:offset+4])[0]
+            offset += 4
+            
+            # Convert gray to RGB then to LAB
+            gray_rgb = int(gray_val * 255)
+            L, a, b = rgb_to_lab(gray_rgb, gray_rgb, gray_rgb)
+        else:
+            # Unknown color space, skip
+            offset = block_start + block_length
+            continue
+        
+        # Read color type (2 bytes) - skip to end of block
+        # offset += 2  # Color type: 0=global, 1=spot, 2=normal
+        
+        # Jump to end of block in case we missed anything
+        offset = block_start + block_length
+        
+        # Add color to list
+        if L is not None and a is not None and b is not None:
+            colors.append({
+                'name': color_name,
+                'L': round(L, 2),
+                'a': round(a, 2),
+                'b': round(b, 2),
+                'source': 'ase'
+            })
+    
+    return colors
