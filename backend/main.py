@@ -3251,12 +3251,10 @@ async def import_filament_colors(file: UploadFile = File(...)):
                     # Skip colors without either LAB or RGB
                     continue
                 
-                # Convert RGB to LAB using LittleCMS
+                # Convert RGB to LAB(D50) using the same process as the rest of the site
                 try:
-                    rgb = [int(rgb_r), int(rgb_g), int(rgb_b)]
-                    # Use sRGB profile for conversion
-                    lab_result = rgb_to_lab(rgb, 'sRGB.icc', rendering_intent=1)
-                    L, a, b = lab_result['lab']
+                    # rgb_to_lab converts sRGB -> Lab(D50) with proper chromatic adaptation
+                    L, a, b = rgb_to_lab(int(rgb_r), int(rgb_g), int(rgb_b))
                     rgb_converted_count += 1
                 except Exception as e:
                     print(f"Failed to convert RGB to LAB for {color_name}: {e}")
