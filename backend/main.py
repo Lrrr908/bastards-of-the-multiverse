@@ -3161,3 +3161,154 @@ def create_cxf_file(library_name: str, colors: list) -> str:
     xml += '</CxF>\n'
     
     return xml
+
+@app.post("/import-filament-colors")
+async def import_filament_colors(file: UploadFile = File(...)):
+    """
+    Import colors from filament_colors_full.json format.
+    
+    Handles:
+    - Colors with LAB values (lab_l, lab_a, lab_b)
+    - Colors with RGB only (converts RGB to LAB via LittleCMS)
+    - Amazon purchase links
+    - Manufacturer info
+    - Filament types
+    
+    Returns colors in the standard format with LAB values.
+    """
+    try:
+        # Check file extension
+        filename_lower = file.filename.lower() if file.filename else ''
+        if not filename_lower.endswith('.json'):
+            raise HTTPException(
+                status_code=400,
+                detail="File must have .json extension"
+            )
+        
+        # Read file content
+        content = await file.read()
+        
+        if len(content) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="File is empty"
+            )
+        
+        # Parse JSON
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid JSON: {str(e)}"
+            )
+        
+        # Extract swatches array
+        swatches = data.get('swatches', [])
+        if not swatches:
+            raise HTTPException(
+                status_code=400,
+                detail="No swatches found in JSON file"
+            )
+        
+        colors = []
+        rgb_converted_count = 0
+        
+        for swatch in swatches:
+            # Extract color data
+            color_name = swatch.get('color_name', 'Unnamed')
+            manufacturer = swatch.get('manufacturer', '')
+            filament_type = swatch.get('filament_type', '')
+            amazon_link = swatch.get('amazon_purchase_link')
+            manufacturer_link = swatch.get('manufacturer_purchase_link')
+            hex_color = swatch.get('hex_color', '')
+            
+            # Build full color name with manufacturer and filament type
+            full_name_parts = []
+            if manufacturer:
+                full_name_parts.append(manufacturer)
+            full_name_parts.append(color_name)
+            if filament_type:
+                full_name_parts.append(f"({filament_type})")
+            full_name = ' '.join(full_name_parts)
+            
+            # Check if LAB values are present
+            lab_l = swatch.get('lab_l')
+            lab_a = swatch.get('lab_a')
+            lab_b = swatch.get('lab_b')
+            
+            if lab_l is not None and lab_a is not None and lab_b is not None:
+                # Use existing LAB values
+                L, a, b = float(lab_l), float(lab_a), float(lab_b)
+            else:
+                # Need to convert from RGB to LAB
+                rgb_r = swatch.get('rgb_r')
+                rgb_g = swatch.get('rgb_g')
+                rgb_b = swatch.get('rgb_b')
+                
+                if rgb_r is None or rgb_g is None or rgb_b is None:
+                    # Skip colors without either LAB or RGB
+                    continue
+                
+                # Convert RGB to LAB using LittleCMS
+                try:
+                    rgb = [int(rgb_r), int(rgb_g), int(rgb_b)]
+                    # Use sRGB profile for conversion
+                    lab_result = rgb_to_lab(rgb, 'sRGB.icc', rendering_intent=1)
+                    L, a, b = lab_result['lab']
+                    rgb_converted_count += 1
+                except Exception as e:
+                    print(f"Failed to convert RGB to LAB for {color_name}: {e}")
+                    # Use a default grey if conversion fails
+                    L, a, b = 50.0, 0.0, 0.0
+            
+            # Build color object
+            color_obj = {
+                'name': full_name,
+                'L': round(L, 2),
+                'a': round(a, 2),
+                'b': round(b, 2),
+                'manufacturer': manufacturer,
+                'filament_type': filament_type,
+                'hex': hex_color
+            }
+            
+            # Add purchase links if available
+            if amazon_link:
+                color_obj['amazon_link'] = amazon_link
+            if manufacturer_link:
+                color_obj['manufacturer_link'] = manufacturer_link
+            
+            colors.append(color_obj)
+        
+        if not colors:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid colors found (need either LAB or RGB values)"
+            )
+        
+        # Get metadata if available
+        metadata = data.get('metadata', {})
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "source": metadata.get('source', 'FilamentColors'),
+            "colors": colors,
+            "count": len(colors),
+            "stats": {
+                "with_lab": len(colors) - rgb_converted_count,
+                "converted_from_rgb": rgb_converted_count,
+                "with_amazon_links": sum(1 for c in colors if 'amazon_link' in c),
+                "with_manufacturer_links": sum(1 for c in colors if 'manufacturer_link' in c)
+            },
+            "note": "Colors ready for import into Color Match Widget"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Filament colors import failed: {str(e)}"
+        )
