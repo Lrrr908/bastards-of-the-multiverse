@@ -4,30 +4,35 @@
       "id": "pantone",
       "name": "PMS",
       "file": "pantone.json",
+      "format": "json",
       "enabled": true
     },
     {
       "id": "behr",
       "name": "Behr",
       "file": "behr.json",
+      "format": "json",
       "enabled": true
     },
     {
       "id": "sherwin",
       "name": "Sherwin Williams",
       "file": "sherwin.json",
+      "format": "json",
       "enabled": true
     },
     {
       "id": "bm",
       "name": "Benjamin Moore",
       "file": "benjaminmoore.json",
+      "format": "json",
       "enabled": true
     },
     {
       "id": "filamentcolors",
       "name": "Filament Colors",
       "file": "filamentcolors.json",
+      "format": "filamentcolors",
       "enabled": true
     }
   ]
