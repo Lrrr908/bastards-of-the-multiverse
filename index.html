@@ -4050,20 +4050,53 @@ Think of it like this:
         const libNames = {};
         let libraryManifest = [];
 
+        // Default library configuration (fallback if manifest doesn't exist yet)
+        const defaultLibraries = [
+            { id: "pantone", name: "PMS", file: "pantone.json", enabled: true },
+            { id: "behr", name: "Behr", file: "behr.json", enabled: true },
+            { id: "sherwin", name: "Sherwin Williams", file: "sherwin.json", enabled: true },
+            { id: "bm", name: "Benjamin Moore", file: "benjaminmoore.json", enabled: true }
+        ];
+
         // Load the library manifest and initialize all libraries
         async function initializeLibraries() {
             try {
-                console.log('Loading library manifest...');
-                const manifestRes = await fetch(BASE_URL + 'libraries.json');
-                if (!manifestRes.ok) throw new Error(`Manifest load failed: HTTP ${manifestRes.status}`);
+                const manifestUrl = BASE_URL + 'libraries.json';
+                console.log('=== INITIALIZING LIBRARIES ===');
+                console.log('Manifest URL:', manifestUrl);
                 
-                const manifestData = await manifestRes.json();
+                let manifestData;
+                try {
+                    const manifestRes = await fetch(manifestUrl);
+                    console.log('Manifest fetch response:', manifestRes.status, manifestRes.statusText);
+                    
+                    if (manifestRes.ok) {
+                        manifestData = await manifestRes.json();
+                        console.log('✔ Manifest loaded from server');
+                    } else {
+                        throw new Error(`HTTP ${manifestRes.status}`);
+                    }
+                } catch (manifestError) {
+                    console.warn('⚠ Manifest not found, using default libraries:', manifestError.message);
+                    manifestData = { libraries: defaultLibraries };
+                }
+                
+                console.log('Manifest data:', manifestData);
+                
+                if (!manifestData.libraries || !Array.isArray(manifestData.libraries)) {
+                    throw new Error('Invalid manifest format: missing libraries array');
+                }
+                
                 libraryManifest = manifestData.libraries.filter(lib => lib.enabled);
                 
-                console.log(`✔ Manifest loaded: ${libraryManifest.length} libraries`);
+                console.log(`✔ ${libraryManifest.length} libraries enabled`);
                 
                 // Create checkboxes for each library
                 const container = document.getElementById('cmw-public-libraries-container');
+                if (!container) {
+                    throw new Error('Library container not found in DOM');
+                }
+                
                 libraryManifest.forEach(lib => {
                     libNames[lib.id] = lib.name;
                     
@@ -4090,48 +4123,90 @@ Think of it like this:
                     toggleItem.appendChild(checkbox);
                     toggleItem.appendChild(label);
                     container.appendChild(toggleItem);
+                    
+                    console.log(`Created checkbox for library: ${lib.name}`);
                 });
                 
-                // Add custom libraries container after public libraries
+                // Add custom libraries container inside the grid (uses display:contents to flow)
                 const customContainer = document.createElement('div');
                 customContainer.id = 'cmw-custom-libraries-container';
                 customContainer.style.display = 'contents';
-                container.parentElement.appendChild(customContainer);
+                container.appendChild(customContainer);
                 
-                // Load all library data files
+                console.log('Custom libraries container added to grid');
+                
+                // Load all library data files (use allSettled to continue even if some fail)
                 const loadPromises = libraryManifest.map(lib => 
                     loadLibrary(lib.id, BASE_URL + lib.file, lib.name)
                 );
-                await Promise.all(loadPromises);
+                const results = await Promise.allSettled(loadPromises);
                 
-                console.log('✔ All libraries initialized');
+                const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length;
+                console.log(`✔ Libraries initialized: ${successCount}/${libraryManifest.length} loaded successfully`);
             } catch (e) {
                 console.error('✖ Failed to initialize libraries:', e);
-                // Fallback to empty state
+                // Continue even if manifest fails - show empty state
             }
         }
 
         async function loadLibrary(id, url, name) {
             try {
+                console.log(`Loading ${name} from ${url}...`);
                 const res = await fetch(url);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                
                 const colors = await res.json();
-               
-                libs[id] = colors.map(color => ({
-                    ...color,
-                    library: id,
-                    libraryName: name
-                }));
+                
+                // Validate it's an array
+                if (!Array.isArray(colors)) {
+                    throw new Error('Library data must be an array');
+                }
+                
+                // Map colors and ensure required fields exist
+                libs[id] = colors.map((color, index) => {
+                    // Validate required fields
+                    if (typeof color.L !== 'number' || typeof color.a !== 'number' || typeof color.b !== 'number') {
+                        console.warn(`${name}: Color at index ${index} missing Lab values, skipping`);
+                        return null;
+                    }
+                    
+                    return {
+                        name: color.name || `Unnamed ${index + 1}`,
+                        L: color.L,
+                        a: color.a,
+                        b: color.b,
+                        hex: color.hex || '#808080',
+                        library: id,
+                        libraryName: name,
+                        // Include optional fields if they exist
+                        ...(color.amazon && { amazon: color.amazon }),
+                        ...(color.manufacturer && { manufacturer: color.manufacturer }),
+                        ...(color.C !== undefined && { C: color.C }),
+                        ...(color.M !== undefined && { M: color.M }),
+                        ...(color.Y !== undefined && { Y: color.Y }),
+                        ...(color.K !== undefined && { K: color.K })
+                    };
+                }).filter(Boolean); // Remove any null entries
                
                 const countEl = document.getElementById(`count-${id}`);
                 if (countEl) {
-                    countEl.textContent = `(${colors.length})`;
+                    countEl.textContent = `(${libs[id].length})`;
                 }
                
-                console.log(`✔ ${name} loaded (${libs[id].length} colors)`);
+                console.log(`✔ ${name} loaded successfully (${libs[id].length} colors)`);
+                return true;
             } catch (e) {
-                console.error(`✖ ${name} failed (${url})`, e);
+                console.error(`✖ ${name} failed to load:`, e.message, `(${url})`);
                 libs[id] = [];
+                
+                // Update count to show 0
+                const countEl = document.getElementById(`count-${id}`);
+                if (countEl) {
+                    countEl.textContent = '(0)';
+                }
+                return false;
             }
         }
 
