@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: colormatch
+    env: static
+    buildCommand: ""
+    staticPublishPath: ./
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=3600
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
