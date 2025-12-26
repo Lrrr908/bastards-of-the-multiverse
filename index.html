@@ -3582,7 +3582,8 @@ Think of it like this:
         // This function is kept only for reference but should never be called
         // All Lab conversions MUST go through LittleCMS API for accuracy
         function rgb2lab(r, g, b) {
-            console.error('WARNING: rgb2lab() called - this should use LittleCMS API instead!');
+            // Note: For user-entered colors, prefer LittleCMS API for accuracy
+            // For bulk library loading, this client-side conversion is appropriate
             r /= 255;
             g /= 255;
             b /= 255;
@@ -3606,9 +3607,8 @@ Think of it like this:
             return { L, a, b: b_lab };
         }
 
-        // DEPRECATED: DO NOT USE - use convertColor() API instead
+        // Note: For user-entered colors, prefer LittleCMS API for accuracy
         function hex2lab(hex) {
-            console.error('WARNING: hex2lab() called - this should use LittleCMS API instead!');
             const rgb = hex2rgb(hex);
             return rgb2lab(rgb.r, rgb.g, rgb.b);
         }
@@ -3629,11 +3629,8 @@ Think of it like this:
             return false;
         }
 
-        // DEPRECATED: DO NOT USE for Lab→Hex conversions - use convertColor() API instead
-        // This function is kept only for reference but should never be called
-        // All Lab→Hex conversions MUST go through LittleCMS API with sRGB.icc for accuracy
+        // Note: For user-entered colors, prefer LittleCMS API for accuracy
         function lab2hex(L, a, b) {
-            console.error('WARNING: lab2hex() called - this should use LittleCMS API instead!');
             // Use existing lab2rgb function and extract RGB values
             const rgbString = lab2rgb(L, a, b);
             const rgbMatch = rgbString.match(/rgb\((\d+),(\d+),(\d+)\)/);
@@ -4175,9 +4172,32 @@ Think of it like this:
                     // CSV format - needs API endpoint
                     const text = await res.text();
                     colors = await parseCsvData(text, name);
+                } else if (format === 'nested') {
+                    // Nested format with rgb/lab/cmyk objects
+                    const data = await res.json();
+                    colors = parseNestedFormat(data, name);
                 } else {
-                    // Default JSON format
-                    colors = await res.json();
+                    // Default JSON format - auto-detect if nested
+                    const data = await res.json();
+                    
+                    // Check if it's nested format by looking at first item
+                    if (Array.isArray(data) && data.length > 0 && data[0]) {
+                        const first = data[0];
+                        const hasNestedStructure = (
+                            (first.rgb && typeof first.rgb === 'object' && 'r' in first.rgb) ||
+                            (first.lab && typeof first.lab === 'object' && 'l' in first.lab) ||
+                            (first.cmyk && typeof first.cmyk === 'object' && 'c' in first.cmyk)
+                        );
+                        
+                        if (hasNestedStructure) {
+                            console.log(`✓ Auto-detected nested format for ${name}`);
+                            colors = parseNestedFormat(data, name);
+                        } else {
+                            colors = data;
+                        }
+                    } else {
+                        colors = data;
+                    }
                 }
                 
                 // Validate it's an array
@@ -4229,65 +4249,211 @@ Think of it like this:
             }
         }
         
-        // Parse Filament Colors format (handles RGB -> Lab conversion)
-        async function parseFilamentColorsData(data, libraryName) {
-            const API_URL = document.getElementById('cmw-api-url')?.value || 'http://127.0.0.1:8000';
+        // Parse nested format (with rgb/lab/cmyk objects)
+        function parseNestedFormat(data, libraryName) {
+            console.log(`Parsing nested format data for ${libraryName}...`);
+            
+            if (!Array.isArray(data)) {
+                console.error('Nested format must be an array');
+                return [];
+            }
+            
             const colors = [];
-            
-            // Handle both array and nested format
-            const colorArray = Array.isArray(data) ? data : (data.colors || []);
-            
-            for (const item of colorArray) {
-                let color = { ...item };
+            for (let i = 0; i < data.length; i++) {
+                const item = data[i];
+                if (!item || typeof item !== 'object') continue;
                 
-                // If has Lab values, use them directly
-                if (typeof color.L === 'number' && typeof color.a === 'number' && typeof color.b === 'number') {
-                    colors.push(color);
-                    continue;
+                // Start with all original data
+                const color = { ...item };
+                
+                // Ensure name is set
+                if (!color.name) {
+                    color.name = `Color ${i+1}`;
                 }
                 
-                // If has RGB but not Lab, convert via API
-                if (color.rgb || (typeof color.r === 'number' && typeof color.g === 'number' && typeof color.b === 'number')) {
-                    try {
-                        const rgb = color.rgb || { r: color.r, g: color.g, b: color.b };
-                        const response = await fetch(`${API_URL}/rgb-to-lab`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ r: rgb.r, g: rgb.g, b: rgb.b })
-                        });
-                        
-                        if (response.ok) {
-                            const labData = await response.json();
-                            color.L = labData.lab[0];
-                            color.a = labData.lab[1];
-                            color.b = labData.lab[2];
-                            colors.push(color);
-                        } else {
-                            console.warn(`Failed to convert RGB for color: ${color.name}`);
-                        }
-                    } catch (e) {
-                        console.warn(`RGB conversion failed for: ${color.name}`, e);
+                // Flatten nested rgb object if present
+                if (item.rgb && typeof item.rgb === 'object') {
+                    color.rgb_r = item.rgb.r;
+                    color.rgb_g = item.rgb.g;
+                    color.rgb_b = item.rgb.b;
+                }
+                
+                // Flatten nested lab object if present (REQUIRED for color matching)
+                if (item.lab && typeof item.lab === 'object') {
+                    color.L = item.lab.l;
+                    color.a = item.lab.a;
+                    color.b = item.lab.b;
+                    
+                    // Log first few for debugging
+                    if (i < 2) {
+                        console.log(`  Color ${i}: Lab from nested: L=${color.L}, a=${color.a}, b=${color.b}`);
                     }
-                } else if (color.hex) {
-                    // If has hex but not Lab, convert via API
-                    try {
-                        const response = await fetch(`${API_URL}/hex-to-lab/${encodeURIComponent(color.hex)}`);
-                        if (response.ok) {
-                            const labData = await response.json();
-                            color.L = labData.lab[0];
-                            color.a = labData.lab[1];
-                            color.b = labData.lab[2];
-                            colors.push(color);
-                        } else {
-                            console.warn(`Failed to convert hex for color: ${color.name}`);
-                        }
-                    } catch (e) {
-                        console.warn(`Hex conversion failed for: ${color.name}`, e);
+                }
+                
+                // Flatten nested cmyk object if present
+                if (item.cmyk && typeof item.cmyk === 'object') {
+                    color.cmyk_c = item.cmyk.c;
+                    color.cmyk_m = item.cmyk.m;
+                    color.cmyk_y = item.cmyk.y;
+                    color.cmyk_k = item.cmyk.k;
+                }
+                
+                // Ensure hex is present
+                if (!color.hex && item.hex) {
+                    color.hex = item.hex;
+                }
+                
+                colors.push(color);
+            }
+            
+            console.log(`✔ Parsed ${colors.length} colors from nested format`);
+            return colors;
+        }
+        
+        // Parse Filament Colors format (handles RGB -> Lab conversion)
+        async function parseFilamentColorsData(data, libraryName) {
+            console.log(`Parsing Filament Colors data for ${libraryName}...`);
+            console.log('Data structure:', Array.isArray(data) ? 'Array' : 'Object', 'Length/Keys:', Array.isArray(data) ? data.length : Object.keys(data).length);
+            
+            // Handle different data structures
+            let colorArray = [];
+            if (Array.isArray(data)) {
+                colorArray = data;
+            } else if (data.swatches && Array.isArray(data.swatches)) {
+                // FilamentColors.xyz format
+                colorArray = data.swatches;
+                console.log(`FilamentColors format detected. Total: ${data.metadata?.total_swatches || colorArray.length}`);
+            } else if (data.colors && Array.isArray(data.colors)) {
+                colorArray = data.colors;
+            } else if (typeof data === 'object') {
+                // Maybe it's an object with color keys
+                colorArray = Object.values(data).filter(v => typeof v === 'object');
+            }
+            
+            console.log(`Found ${colorArray.length} color entries to process`);
+            
+            // Log first item structure for debugging
+            if (colorArray.length > 0) {
+                console.log('First swatch structure:', colorArray[0]);
+            }
+            
+            const API_URL = document.getElementById('cmw-api-url')?.value || 'http://localhost:8000';
+            const colors = [];
+            const failedConversions = [];
+            
+            // Process colors with better error handling
+            for (let i = 0; i < colorArray.length; i++) {
+                const item = colorArray[i];
+                if (!item || typeof item !== 'object') continue;
+                
+                // Debug first few items
+                if (i < 3) {
+                    console.log(`Processing item ${i}:`, item);
+                }
+                
+                // Normalize field names from FilamentColors format
+                let color = { ...item };
+                
+                // Map FilamentColors field names to standard names
+                if (item.color_name && !color.name) color.name = item.color_name;
+                if (item.hex_color && !color.hex) color.hex = item.hex_color;
+                if (item.lab_l !== null && item.lab_l !== undefined && !color.L) color.L = item.lab_l;
+                if (item.lab_a !== null && item.lab_a !== undefined && !color.a) color.a = item.lab_a;
+                if (item.lab_b !== null && item.lab_b !== undefined && !color.b) color.b = item.lab_b;
+                // Use amazon_link to match what display code expects
+                if (item.amazon_purchase_link && !color.amazon_link) color.amazon_link = item.amazon_purchase_link;
+                if (item.manufacturer_purchase_link && !color.manufacturer_link) color.manufacturer_link = item.manufacturer_purchase_link;
+                
+                const colorId = color.name || color.id || `Color ${i+1}`;
+                
+                try {
+                    // If has Lab values, use them directly
+                    if (typeof color.L === 'number' && typeof color.a === 'number' && typeof color.b === 'number') {
+                        colors.push(color);
+                        continue;
                     }
+                    
+                    // Try client-side RGB to Lab conversion (fast, no API needed)
+                    let rgb = null;
+                    if (color.rgb && typeof color.rgb === 'object') {
+                        rgb = color.rgb;
+                    } else if (typeof color.r === 'number' && typeof color.g === 'number' && typeof color.b === 'number') {
+                        rgb = { r: color.r, g: color.g, b: color.b };
+                    } else if (typeof item.rgb_r === 'number' && typeof item.rgb_g === 'number' && typeof item.rgb_b === 'number') {
+                        // FilamentColors RGB format
+                        rgb = { r: item.rgb_r, g: item.rgb_g, b: item.rgb_b };
+                    }
+                    
+                    if (rgb) {
+                        // Use LittleCMS API for accurate sRGB→Lab(D50) with proper chromatic adaptation
+                        try {
+                            const response = await fetch(`${API_URL}/rgb-to-lab`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ r: rgb.r, g: rgb.g, b: rgb.b })
+                            });
+                            
+                            if (response.ok) {
+                                const labData = await response.json();
+                                color.L = labData.lab[0];
+                                color.a = labData.lab[1];
+                                color.b = labData.lab[2];
+                                
+                                if (!color.hex) {
+                                    // Generate hex from RGB
+                                    color.hex = '#' + [rgb.r, rgb.g, rgb.b].map(x => {
+                                        const hex = Math.round(x).toString(16);
+                                        return hex.length === 1 ? '0' + hex : hex;
+                                    }).join('');
+                                }
+                                
+                                colors.push(color);
+                            } else {
+                                console.warn(`API conversion failed for ${colorId}, skipping`);
+                                failedConversions.push(colorId);
+                            }
+                        } catch (e) {
+                            console.warn(`API error for ${colorId}:`, e.message);
+                            failedConversions.push(colorId);
+                        }
+                        continue;
+                    }
+                    
+                    // If has hex, convert via API
+                    if (color.hex) {
+                        try {
+                            const response = await fetch(`${API_URL}/hex-to-lab/${encodeURIComponent(color.hex)}`);
+                            if (response.ok) {
+                                const labData = await response.json();
+                                color.L = labData.lab[0];
+                                color.a = labData.lab[1];
+                                color.b = labData.lab[2];
+                                colors.push(color);
+                            } else {
+                                console.warn(`API hex conversion failed for ${colorId}, skipping`);
+                                failedConversions.push(colorId);
+                            }
+                        } catch (e) {
+                            console.warn(`API hex error for ${colorId}:`, e.message);
+                            failedConversions.push(colorId);
+                        }
+                        continue;
+                    }
+                    
+                    // If we got here, couldn't convert - skip this color
+                    failedConversions.push(colorId);
+                    
+                } catch (e) {
+                    console.warn(`Error processing color ${colorId}:`, e.message);
+                    failedConversions.push(colorId);
                 }
             }
             
-            console.log(`Parsed ${colors.length} colors from ${libraryName}`);
+            if (failedConversions.length > 0) {
+                console.warn(`${failedConversions.length} colors could not be converted:`, failedConversions.slice(0, 5));
+            }
+            
+            console.log(`✔ Parsed ${colors.length} colors from ${libraryName} (${failedConversions.length} failed)`);
             return colors;
         }
         
@@ -4534,6 +4700,16 @@ Think of it like this:
                     delete preview.dataset.selectedName;
                     delete preview.dataset.selectedLibrary;
                     delete preview.dataset.originalHexInput;
+                    delete preview.dataset.hex;
+                    delete preview.dataset.rgbR;
+                    delete preview.dataset.rgbG;
+                    delete preview.dataset.rgbB;
+                    delete preview.dataset.cmykC;
+                    delete preview.dataset.cmykM;
+                    delete preview.dataset.cmykY;
+                    delete preview.dataset.cmykK;
+                    delete preview.dataset.amazonLink;
+                    delete preview.dataset.manufacturerLink;
                     updateSelectedColorInfo(null);
                 }
             }
@@ -4872,6 +5048,16 @@ Think of it like this:
                     delete preview.dataset.selectedName;
                     delete preview.dataset.selectedLibrary;
                     delete preview.dataset.originalHexInput;
+                    delete preview.dataset.hex;
+                    delete preview.dataset.rgbR;
+                    delete preview.dataset.rgbG;
+                    delete preview.dataset.rgbB;
+                    delete preview.dataset.cmykC;
+                    delete preview.dataset.cmykM;
+                    delete preview.dataset.cmykY;
+                    delete preview.dataset.cmykK;
+                    delete preview.dataset.amazonLink;
+                    delete preview.dataset.manufacturerLink;
                     updateSelectedColorInfo(null);
                 }
             } else {
@@ -4889,6 +5075,16 @@ Think of it like this:
                     delete preview.dataset.selectedName;
                     delete preview.dataset.selectedLibrary;
                     delete preview.dataset.originalHexInput;
+                    delete preview.dataset.hex;
+                    delete preview.dataset.rgbR;
+                    delete preview.dataset.rgbG;
+                    delete preview.dataset.rgbB;
+                    delete preview.dataset.cmykC;
+                    delete preview.dataset.cmykM;
+                    delete preview.dataset.cmykY;
+                    delete preview.dataset.cmykK;
+                    delete preview.dataset.amazonLink;
+                    delete preview.dataset.manufacturerLink;
                     if (selectedType !== 'name' || !preview.classList.contains('selected')) {
                         updateSelectedColorInfo(null);
                     }
@@ -5430,9 +5626,20 @@ Think of it like this:
                     }
                 }
                 
-                // Store color name and library for click handler
+                // Store color name, library, and purchase links for click handler
                 swatchEl.dataset.colorName = colorName !== 'No close match' ? colorName : typeLabel;
                 swatchEl.dataset.libraryName = libraryName;
+                
+                // Store amazon and manufacturer links if available from the matched color
+                if (bestMatch) {
+                    const amazonLink = bestMatch.amazon_link || bestMatch.amazonLink || 
+                                     (bestMatch.colorData && (bestMatch.colorData.amazon_link || bestMatch.colorData.amazonLink));
+                    const manufacturerLink = bestMatch.manufacturer_link || bestMatch.manufacturerLink || 
+                                           (bestMatch.colorData && (bestMatch.colorData.manufacturer_link || bestMatch.colorData.manufacturerLink));
+                    
+                    if (amazonLink) swatchEl.dataset.amazonLink = amazonLink;
+                    if (manufacturerLink) swatchEl.dataset.manufacturerLink = manufacturerLink;
+                }
                
                 // Get CMYK (GRACoL2013.icc) and Hex (sRGB.icc) conversion from LittleCMS for harmony color
                 Promise.all([
@@ -6041,7 +6248,7 @@ Think of it like this:
                     const hasAmazonLink = c.amazon_link || c.amazonLink;
                     const amazonIndicator = hasAmazonLink ? ' <img src="https://www.amazon.com/favicon.ico" style="width: 16px; height: 16px; vertical-align: middle; margin-left: 4px;" title="Available on Amazon">' : '';
                     
-                    // Store all color data in row dataset for click handler
+                    // Store all color data in row dataset for click handler (including RGB & CMYK if present)
                     const rowHTML = `
                         <tr style="cursor: pointer;" 
                             title="${hasAmazonLink ? 'Click for details and purchase link' : 'Click for details'}"
@@ -6053,6 +6260,13 @@ Think of it like this:
                             data-amazon-link="${(c.amazon_link || c.amazonLink || '').replace(/"/g, '&quot;')}"
                             data-manufacturer-link="${(c.manufacturer_link || c.manufacturerLink || '').replace(/"/g, '&quot;')}"
                             data-hex="${(c.hex || '').replace(/"/g, '&quot;')}"
+                            data-rgb-r="${c.rgb_r !== undefined ? c.rgb_r : ''}"
+                            data-rgb-g="${c.rgb_g !== undefined ? c.rgb_g : ''}"
+                            data-rgb-b="${c.rgb_b !== undefined ? c.rgb_b : ''}"
+                            data-cmyk-c="${c.cmyk_c !== undefined ? c.cmyk_c : ''}"
+                            data-cmyk-m="${c.cmyk_m !== undefined ? c.cmyk_m : ''}"
+                            data-cmyk-y="${c.cmyk_y !== undefined ? c.cmyk_y : ''}"
+                            data-cmyk-k="${c.cmyk_k !== undefined ? c.cmyk_k : ''}"
                             data-manufacturer="${(c.manufacturer || '').replace(/"/g, '&quot;')}"
                             data-filament-type="${(c.filament_type || '').replace(/"/g, '&quot;')}">
                             <td><div class="cmw-swatch" style="background:${col}"></div></td>
@@ -6177,6 +6391,15 @@ Think of it like this:
                             preview.dataset.selectedLibrary = exactMatch.color.libraryName;
                             preview.dataset.amazonLink = exactMatch.color.amazon_link || exactMatch.color.amazonLink || '';
                             preview.dataset.manufacturerLink = exactMatch.color.manufacturer_link || exactMatch.color.manufacturerLink || '';
+                            // Store RGB & CMYK if available from library
+                            preview.dataset.hex = exactMatch.color.hex || '';
+                            preview.dataset.rgbR = exactMatch.color.rgb_r !== undefined ? exactMatch.color.rgb_r : '';
+                            preview.dataset.rgbG = exactMatch.color.rgb_g !== undefined ? exactMatch.color.rgb_g : '';
+                            preview.dataset.rgbB = exactMatch.color.rgb_b !== undefined ? exactMatch.color.rgb_b : '';
+                            preview.dataset.cmykC = exactMatch.color.cmyk_c !== undefined ? exactMatch.color.cmyk_c : '';
+                            preview.dataset.cmykM = exactMatch.color.cmyk_m !== undefined ? exactMatch.color.cmyk_m : '';
+                            preview.dataset.cmykY = exactMatch.color.cmyk_y !== undefined ? exactMatch.color.cmyk_y : '';
+                            preview.dataset.cmykK = exactMatch.color.cmyk_k !== undefined ? exactMatch.color.cmyk_k : '';
                            
                             updateSelectedColorInfo({
                                 name: displayName,
@@ -6439,6 +6662,15 @@ Think of it like this:
                 suggestionEl.dataset.library = s.color.libraryName;
                 suggestionEl.dataset.amazonLink = s.color.amazon_link || s.color.amazonLink || '';
                 suggestionEl.dataset.manufacturerLink = s.color.manufacturer_link || s.color.manufacturerLink || '';
+                // Store RGB & CMYK if available from color library
+                suggestionEl.dataset.hex = s.color.hex || '';
+                suggestionEl.dataset.rgbR = s.color.rgb_r !== undefined ? s.color.rgb_r : '';
+                suggestionEl.dataset.rgbG = s.color.rgb_g !== undefined ? s.color.rgb_g : '';
+                suggestionEl.dataset.rgbB = s.color.rgb_b !== undefined ? s.color.rgb_b : '';
+                suggestionEl.dataset.cmykC = s.color.cmyk_c !== undefined ? s.color.cmyk_c : '';
+                suggestionEl.dataset.cmykM = s.color.cmyk_m !== undefined ? s.color.cmyk_m : '';
+                suggestionEl.dataset.cmykY = s.color.cmyk_y !== undefined ? s.color.cmyk_y : '';
+                suggestionEl.dataset.cmykK = s.color.cmyk_k !== undefined ? s.color.cmyk_k : '';
                 // Shorten "Pantone" to "PMS" in color names for display
                 const displayName = s.color.name.replace(/^Pantone\s*/i, 'PMS ');
                 const displayLibrary = (s.color.libraryName || 'Unknown').replace(/^Pantone$/i, 'PMS');
@@ -6523,6 +6755,15 @@ Think of it like this:
                         preview.dataset.selectedLibrary = suggestionEl.dataset.library;
                         preview.dataset.amazonLink = suggestionEl.dataset.amazonLink || '';
                         preview.dataset.manufacturerLink = suggestionEl.dataset.manufacturerLink || '';
+                        // Store RGB & CMYK if available from suggestion
+                        preview.dataset.hex = suggestionEl.dataset.hex || '';
+                        preview.dataset.rgbR = suggestionEl.dataset.rgbR || '';
+                        preview.dataset.rgbG = suggestionEl.dataset.rgbG || '';
+                        preview.dataset.rgbB = suggestionEl.dataset.rgbB || '';
+                        preview.dataset.cmykC = suggestionEl.dataset.cmykC || '';
+                        preview.dataset.cmykM = suggestionEl.dataset.cmykM || '';
+                        preview.dataset.cmykY = suggestionEl.dataset.cmykY || '';
+                        preview.dataset.cmykK = suggestionEl.dataset.cmykK || '';
                        
                         console.log('About to call updateSelectedColorInfo');
                         await updateSelectedColorInfo({
@@ -6793,6 +7034,19 @@ Think of it like this:
                     showStatus(`Color libraries loaded successfully! ${totalColors} colors available.`);
                     console.log('All library fetches completed');
                    
+                    // Load custom libraries AFTER container is created
+                    loadCustomLibraries();
+                    
+                    // Add event delegation for custom library toggles (Amazon filter reset)
+                    const customLibrariesContainer = document.getElementById('cmw-custom-libraries-container');
+                    if (customLibrariesContainer) {
+                        customLibrariesContainer.addEventListener('change', (e) => {
+                            if (e.target.type === 'checkbox') {
+                                resetAmazonFilter();
+                            }
+                        });
+                    }
+                   
                     // Update library counts after loading
                     initializeLibraryCounts();
                     
@@ -6852,19 +7106,11 @@ Think of it like this:
                 }
             }
             
-            // Add listeners to built-in library toggles
-            ['pantone', 'behr', 'sherwin', 'bm'].forEach(libId => {
-                const checkbox = document.getElementById(`toggle-${libId}`);
-                if (checkbox) {
-                    checkbox.addEventListener('change', resetAmazonFilter);
-                }
-            });
-            
-            // Monitor custom libraries container for dynamically added toggles
-            const customLibrariesContainer = document.getElementById('cmw-custom-libraries-container');
-            if (customLibrariesContainer) {
-                // Use event delegation for custom library toggles (since they're added dynamically)
-                customLibrariesContainer.addEventListener('change', (e) => {
+            // Use event delegation for ALL library toggles (dynamically created + custom)
+            // Public libraries are now created dynamically during initialization
+            const publicLibrariesContainer = document.getElementById('cmw-public-libraries-container');
+            if (publicLibrariesContainer) {
+                publicLibrariesContainer.addEventListener('change', (e) => {
                     if (e.target.type === 'checkbox') {
                         resetAmazonFilter();
                     }
@@ -7929,10 +8175,16 @@ Think of it like this:
                             if (!data.hex || !data.lab) {
                                 throw new Error('LittleCMS did not return required values');
                             }
-                            return {
+                            const result = {
                                 lab: { L: data.lab[0], a: data.lab[1], b: data.lab[2] },
-                                hex: data.hex.startsWith('#') ? data.hex : '#' + data.hex
+                                hex: data.hex.startsWith('#') ? data.hex : '#' + data.hex,
+                                // Preserve original RGB values so we don't have to convert again
+                                rgb_r: r,
+                                rgb_g: g,
+                                rgb_b: b
                             };
+                            console.log('📦 RGB input created color data:', result);
+                            return result;
                         }
                     } else if (format === 'cmyk') {
                         const c = parseFloat(document.getElementById(`cmw-compare-cmyk-c-${colorNum}`).value);
@@ -7948,10 +8200,17 @@ Think of it like this:
                             if (!data.hex || !data.lab) {
                                 throw new Error('LittleCMS did not return required values');
                             }
-                            return {
+                            const result = {
                                 lab: { L: data.lab[0], a: data.lab[1], b: data.lab[2] },
-                                hex: data.hex.startsWith('#') ? data.hex : '#' + data.hex
+                                hex: data.hex.startsWith('#') ? data.hex : '#' + data.hex,
+                                // Preserve original CMYK values so we don't have to convert again
+                                cmyk_c: c,
+                                cmyk_m: m,
+                                cmyk_y: y,
+                                cmyk_k: k
                             };
+                            console.log('📦 CMYK input created color data:', result);
+                            return result;
                         }
                     }
                 } catch (e) {
@@ -7971,6 +8230,8 @@ Think of it like this:
                 if (colorData) {
                     swatch.style.background = colorData.hex;
                     valuesEl.textContent = `Lab(${colorData.lab.L.toFixed(2)}, ${colorData.lab.a.toFixed(2)}, ${colorData.lab.b.toFixed(2)}) | ${colorData.hex}`;
+                    
+                    console.log(`💾 Storing compare color ${colorNum}:`, colorData);
                     
                     if (colorNum === 1) {
                         compareColor1 = colorData;
@@ -8098,7 +8359,20 @@ Think of it like this:
                                 });
                                 const hex = data.hex ? (data.hex.startsWith('#') ? data.hex : '#' + data.hex) : '#888888';
                                 return `
-                                    <div class="cmw-compare-suggestion-item" data-hex="${hex.replace('#', '')}" data-lab-l="${color.L}" data-lab-a="${color.a}" data-lab-b="${color.b}" data-name="${color.name}" data-library="${libName}">
+                                    <div class="cmw-compare-suggestion-item" 
+                                         data-hex="${color.hex || hex.replace('#', '')}" 
+                                         data-lab-l="${color.L}" 
+                                         data-lab-a="${color.a}" 
+                                         data-lab-b="${color.b}" 
+                                         data-name="${color.name}" 
+                                         data-library="${libName}"
+                                         data-rgb-r="${color.rgb_r !== undefined ? color.rgb_r : ''}"
+                                         data-rgb-g="${color.rgb_g !== undefined ? color.rgb_g : ''}"
+                                         data-rgb-b="${color.rgb_b !== undefined ? color.rgb_b : ''}"
+                                         data-cmyk-c="${color.cmyk_c !== undefined ? color.cmyk_c : ''}"
+                                         data-cmyk-m="${color.cmyk_m !== undefined ? color.cmyk_m : ''}"
+                                         data-cmyk-y="${color.cmyk_y !== undefined ? color.cmyk_y : ''}"
+                                         data-cmyk-k="${color.cmyk_k !== undefined ? color.cmyk_k : ''}">
                                         <div class="cmw-compare-suggestion-swatch" style="background: ${hex};"></div>
                                         <div class="cmw-compare-suggestion-info">
                                             <div class="cmw-compare-suggestion-name">${displayName}</div>
@@ -8109,7 +8383,20 @@ Think of it like this:
                             } catch (err) {
                                 console.error('LittleCMS API unavailable for suggestion:', err);
                                 return `
-                                    <div class="cmw-compare-suggestion-item" data-hex="888888" data-lab-l="${color.L}" data-lab-a="${color.a}" data-lab-b="${color.b}" data-name="${color.name}" data-library="${libName}">
+                                    <div class="cmw-compare-suggestion-item" 
+                                         data-hex="${color.hex ? color.hex.replace('#', '') : '888888'}" 
+                                         data-lab-l="${color.L}" 
+                                         data-lab-a="${color.a}" 
+                                         data-lab-b="${color.b}" 
+                                         data-name="${color.name}" 
+                                         data-library="${libName}"
+                                         data-rgb-r="${color.rgb_r !== undefined ? color.rgb_r : ''}"
+                                         data-rgb-g="${color.rgb_g !== undefined ? color.rgb_g : ''}"
+                                         data-rgb-b="${color.rgb_b !== undefined ? color.rgb_b : ''}"
+                                         data-cmyk-c="${color.cmyk_c !== undefined ? color.cmyk_c : ''}"
+                                         data-cmyk-m="${color.cmyk_m !== undefined ? color.cmyk_m : ''}"
+                                         data-cmyk-y="${color.cmyk_y !== undefined ? color.cmyk_y : ''}"
+                                         data-cmyk-k="${color.cmyk_k !== undefined ? color.cmyk_k : ''}">
                                         <div class="cmw-compare-suggestion-swatch" style="background: #888888;"></div>
                                         <div class="cmw-compare-suggestion-info">
                                             <div class="cmw-compare-suggestion-name">${displayName}</div>
@@ -8140,6 +8427,16 @@ Think of it like this:
                         const a = parseFloat(item.dataset.labA);
                         const b = parseFloat(item.dataset.labB);
                         
+                        // Also get RGB & CMYK if available from library
+                        const rgb_r = item.dataset.rgbR && item.dataset.rgbR !== '' ? parseFloat(item.dataset.rgbR) : undefined;
+                        const rgb_g = item.dataset.rgbG && item.dataset.rgbG !== '' ? parseFloat(item.dataset.rgbG) : undefined;
+                        const rgb_b = item.dataset.rgbB && item.dataset.rgbB !== '' ? parseFloat(item.dataset.rgbB) : undefined;
+                        const cmyk_c = item.dataset.cmykC && item.dataset.cmykC !== '' ? parseFloat(item.dataset.cmykC) : undefined;
+                        const cmyk_m = item.dataset.cmykM && item.dataset.cmykM !== '' ? parseFloat(item.dataset.cmykM) : undefined;
+                        const cmyk_y = item.dataset.cmykY && item.dataset.cmykY !== '' ? parseFloat(item.dataset.cmykY) : undefined;
+                        const cmyk_k = item.dataset.cmykK && item.dataset.cmykK !== '' ? parseFloat(item.dataset.cmykK) : undefined;
+                        const libHex = item.dataset.hex || undefined;
+                        
                         // Keep the color name in the input (don't convert to hex)
                         hexInput.value = displayName;
                         suggestionsEl.style.display = 'none';
@@ -8155,8 +8452,21 @@ Think of it like this:
                             }
                             const hex = data.hex.startsWith('#') ? data.hex : '#' + data.hex;
                             
-                            // Store the original library Lab values, name, and library
-                            const colorData = { lab: { L, a, b }, hex, isLibraryColor: true, name: displayName, libraryName: libraryName };
+                            // Store the original library Lab values, name, library, AND RGB/CMYK from library
+                            const colorData = { 
+                                lab: { L, a, b }, 
+                                hex: libHex || hex, 
+                                isLibraryColor: true, 
+                                name: displayName, 
+                                libraryName: libraryName,
+                                rgb_r,
+                                rgb_g,
+                                rgb_b,
+                                cmyk_c,
+                                cmyk_m,
+                                cmyk_y,
+                                cmyk_k
+                            };
                             const swatch = document.getElementById(`cmw-compare-swatch-${colorNum}`);
                             const valuesEl = document.getElementById(`cmw-compare-values-${colorNum}`);
                             
@@ -8177,8 +8487,21 @@ Think of it like this:
                             swatch.style.background = '#f0f0f0';
                             valuesEl.textContent = `Lab(${L.toFixed(2)}, ${a.toFixed(2)}, ${b.toFixed(2)}) | API Error`;
                             
-                            // Still store Lab values for Delta E calculation (Lab values are known)
-                            const colorData = { lab: { L, a, b }, hex: null, isLibraryColor: true, name: displayName, libraryName: libraryName };
+                            // Still store Lab values for Delta E calculation (Lab values are known) + RGB/CMYK from library
+                            const colorData = { 
+                                lab: { L, a, b }, 
+                                hex: libHex || null, 
+                                isLibraryColor: true, 
+                                name: displayName, 
+                                libraryName: libraryName,
+                                rgb_r,
+                                rgb_g,
+                                rgb_b,
+                                cmyk_c,
+                                cmyk_m,
+                                cmyk_y,
+                                cmyk_k
+                            };
                             if (colorNum === 1) {
                                 compareColor1 = colorData;
                             } else {
@@ -8209,6 +8532,16 @@ Think of it like this:
                             const a = parseFloat(firstItem.dataset.labA);
                             const b = parseFloat(firstItem.dataset.labB);
                             
+                            // Also get RGB & CMYK if available from library
+                            const rgb_r = firstItem.dataset.rgbR && firstItem.dataset.rgbR !== '' ? parseFloat(firstItem.dataset.rgbR) : undefined;
+                            const rgb_g = firstItem.dataset.rgbG && firstItem.dataset.rgbG !== '' ? parseFloat(firstItem.dataset.rgbG) : undefined;
+                            const rgb_b = firstItem.dataset.rgbB && firstItem.dataset.rgbB !== '' ? parseFloat(firstItem.dataset.rgbB) : undefined;
+                            const cmyk_c = firstItem.dataset.cmykC && firstItem.dataset.cmykC !== '' ? parseFloat(firstItem.dataset.cmykC) : undefined;
+                            const cmyk_m = firstItem.dataset.cmykM && firstItem.dataset.cmykM !== '' ? parseFloat(firstItem.dataset.cmykM) : undefined;
+                            const cmyk_y = firstItem.dataset.cmykY && firstItem.dataset.cmykY !== '' ? parseFloat(firstItem.dataset.cmykY) : undefined;
+                            const cmyk_k = firstItem.dataset.cmykK && firstItem.dataset.cmykK !== '' ? parseFloat(firstItem.dataset.cmykK) : undefined;
+                            const libHex = firstItem.dataset.hex || undefined;
+                            
                             // Keep the color name in the input
                             hexInput.value = displayName;
                             suggestionsEl.style.display = 'none';
@@ -8225,8 +8558,21 @@ Think of it like this:
                                 }
                                 const hex = data.hex.startsWith('#') ? data.hex : '#' + data.hex;
                                 
-                                // Store the original library Lab values, name, and library
-                                const colorData = { lab: { L, a, b }, hex, isLibraryColor: true, name: displayName, libraryName: libraryName };
+                                // Store the original library Lab values, name, library, AND RGB/CMYK from library
+                                const colorData = { 
+                                    lab: { L, a, b }, 
+                                    hex: libHex || hex, 
+                                    isLibraryColor: true, 
+                                    name: displayName, 
+                                    libraryName: libraryName,
+                                    rgb_r,
+                                    rgb_g,
+                                    rgb_b,
+                                    cmyk_c,
+                                    cmyk_m,
+                                    cmyk_y,
+                                    cmyk_k
+                                };
                                 const swatch = document.getElementById(`cmw-compare-swatch-${colorNum}`);
                                 const valuesEl = document.getElementById(`cmw-compare-values-${colorNum}`);
                                 
@@ -8247,8 +8593,21 @@ Think of it like this:
                                 swatch.style.background = '#f0f0f0';
                                 valuesEl.textContent = `Lab(${L.toFixed(2)}, ${a.toFixed(2)}, ${b.toFixed(2)}) | API Error`;
                                 
-                                // Still store Lab values for Delta E calculation (Lab values are known)
-                                const colorData = { lab: { L, a, b }, hex: null, isLibraryColor: true, name: displayName, libraryName: libraryName };
+                                // Still store Lab values for Delta E calculation (Lab values are known) + RGB/CMYK from library
+                                const colorData = { 
+                                    lab: { L, a, b }, 
+                                    hex: libHex || null, 
+                                    isLibraryColor: true, 
+                                    name: displayName, 
+                                    libraryName: libraryName,
+                                    rgb_r,
+                                    rgb_g,
+                                    rgb_b,
+                                    cmyk_c,
+                                    cmyk_m,
+                                    cmyk_y,
+                                    cmyk_k
+                                };
                                 if (colorNum === 1) {
                                     compareColor1 = colorData;
                                 } else {
@@ -8385,31 +8744,6 @@ Think of it like this:
                 compareColor2 = null;
             });
             
-            // Compare swatch click handlers for modal popup
-            document.getElementById('cmw-compare-swatch-1').addEventListener('click', () => {
-                if (compareColor1 && compareColor1.lab) {
-                    showColorModal({
-                        name: compareColor1.name || 'Color 1',
-                        libraryName: compareColor1.libraryName || '',
-                        L: compareColor1.lab.L,
-                        a: compareColor1.lab.a,
-                        b: compareColor1.lab.b
-                    });
-                }
-            });
-            
-            document.getElementById('cmw-compare-swatch-2').addEventListener('click', () => {
-                if (compareColor2 && compareColor2.lab) {
-                    showColorModal({
-                        name: compareColor2.name || 'Color 2',
-                        libraryName: compareColor2.libraryName || '',
-                        L: compareColor2.lab.L,
-                        a: compareColor2.lab.a,
-                        b: compareColor2.lab.b
-                    });
-                }
-            });
-            
 
             /* ─────────────────────
                Custom Libraries Feature (Multi-Library)
@@ -8485,8 +8819,13 @@ Think of it like this:
             // Update the library toggles in the main list (only show libraries with colors)
             function updateLibraryToggles() {
                 const container = document.getElementById('cmw-custom-libraries-container');
+                if (!container) {
+                    console.warn('Custom libraries container not ready yet');
+                    return;
+                }
                 container.innerHTML = '';
                 
+                let customLibCount = 0;
                 Object.entries(customLibraries).forEach(([id, lib]) => {
                     if (lib.colors && lib.colors.length > 0) {
                         const div = document.createElement('div');
@@ -8496,8 +8835,10 @@ Think of it like this:
                             <label for="toggle-${id}">${lib.name} <span class="cmw-library-count" id="count-${id}">(${lib.colors.length})</span></label>
                         `;
                         container.appendChild(div);
+                        customLibCount++;
                     }
                 });
+                console.log(`✔ ${customLibCount} custom libraries added to toggles`);
             }
             
             // Update the library selector dropdown
@@ -8589,7 +8930,11 @@ Think of it like this:
                         const color = colors[index];
                         const libraryName = customLibraries[currentCustomLibraryId].name;
                         
-                        // Use the unified showColorModal function with all metadata
+                        // Get the actual displayed color from the swatch
+                        const swatchElement = item.querySelector('.cmw-custom-color-swatch');
+                        const displayColor = swatchElement ? window.getComputedStyle(swatchElement).backgroundColor : null;
+                        
+                        // Use the unified showColorModal function with all metadata (including RGB & CMYK)
                         showColorModal({
                             name: color.name,
                             L: color.L,
@@ -8598,9 +8943,18 @@ Think of it like this:
                             libraryName: libraryName,
                             amazon_link: color.amazon_link || color.amazonLink,
                             manufacturer_link: color.manufacturer_link || color.manufacturerLink,
+                            hex: color.hex,
                             originalHex: color.hex,
                             manufacturer: color.manufacturer,
-                            filament_type: color.filament_type
+                            filament_type: color.filament_type,
+                            rgb_r: color.rgb_r,
+                            rgb_g: color.rgb_g,
+                            rgb_b: color.rgb_b,
+                            cmyk_c: color.cmyk_c,
+                            cmyk_m: color.cmyk_m,
+                            cmyk_y: color.cmyk_y,
+                            cmyk_k: color.cmyk_k,
+                            displayColor
                         });
                     });
                 });
@@ -9044,7 +9398,7 @@ Think of it like this:
                 try {
                     switch (format) {
                         case 'json':
-                            exportAsJSON(library, sanitizedName);
+                            await exportAsJSON(library, sanitizedName);
                             break;
                         case 'csv':
                             exportAsCSV(library, sanitizedName);
@@ -9063,15 +9417,104 @@ Think of it like this:
                 }
             }
             
-            function exportAsJSON(library, filename) {
-                const exportData = {
-                    libraryName: library.name,
-                    colors: library.colors
-                };
+            async function exportAsJSON(library, filename) {
+                console.log('Exporting library as JSON:', library.name, 'Colors:', library.colors.length);
                 
+                // Show progress message
+                const statusEl = document.getElementById('cmw-custom-status');
+                if (statusEl) {
+                    statusEl.textContent = `Exporting ${library.colors.length} colors...`;
+                    statusEl.className = 'cmw-status show';
+                }
+                
+                const apiUrl = getApiBaseUrl();
+                const exportData = [];
+                
+                try {
+                    // Process colors and generate hex values via LittleCMS API if needed
+                    for (let i = 0; i < library.colors.length; i++) {
+                        const color = library.colors[i];
+                        
+                        // Update progress every 50 colors
+                        if (statusEl && i % 50 === 0) {
+                            statusEl.textContent = `Processing ${i + 1}/${library.colors.length}...`;
+                        }
+                        
+                        const exportColor = {
+                            name: color.name || 'Unnamed',
+                            L: color.L,
+                            a: color.a,
+                            b: color.b,
+                            hex: color.hex || color.Hex || null
+                        };
+                        
+                        // If hex doesn't exist, generate it via LittleCMS API (proper sRGB.icc conversion)
+                        if (!exportColor.hex) {
+                            try {
+                                const response = await fetch(`${apiUrl}/convert`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        lab: [color.L, color.a, color.b],
+                                        profile: 'sRGB.icc',
+                                        renderingIntent: 1  // Relative colorimetric
+                                    })
+                                });
+                                
+                                if (response.ok) {
+                                    const data = await response.json();
+                                    if (data.hex) {
+                                        exportColor.hex = '#' + data.hex.toUpperCase();
+                                    }
+                                    // Add RGB from LittleCMS
+                                    if (data.rgb && Array.isArray(data.rgb)) {
+                                        exportColor.rgb_r = Math.round(data.rgb[0]);
+                                        exportColor.rgb_g = Math.round(data.rgb[1]);
+                                        exportColor.rgb_b = Math.round(data.rgb[2]);
+                                    }
+                                }
+                            } catch (e) {
+                                console.error(`LittleCMS conversion failed for ${color.name}:`, e);
+                                // Skip this color if conversion fails
+                                continue;
+                            }
+                        } else {
+                            // Hex exists, include RGB if available
+                            if (color.rgb_r !== undefined) exportColor.rgb_r = color.rgb_r;
+                            if (color.rgb_g !== undefined) exportColor.rgb_g = color.rgb_g;
+                            if (color.rgb_b !== undefined) exportColor.rgb_b = color.rgb_b;
+                        }
+                        
+                        // Add optional metadata fields
+                        if (color.amazon_link || color.amazonLink) exportColor.amazon_link = color.amazon_link || color.amazonLink;
+                        if (color.manufacturer_link || color.manufacturerLink) exportColor.manufacturer_link = color.manufacturer_link || color.manufacturerLink;
+                        if (color.manufacturer) exportColor.manufacturer = color.manufacturer;
+                        if (color.filament_type) exportColor.filament_type = color.filament_type;
+                        
+                        exportData.push(exportColor);
+                    }
+                
+                console.log('Export complete, creating JSON file with', exportData.length, 'colors');
                 const dataStr = JSON.stringify(exportData, null, 2);
                 const blob = new Blob([dataStr], { type: 'application/json' });
                 downloadBlob(blob, `${filename}_colors.json`);
+                
+                // Show success message
+                if (statusEl) {
+                    statusEl.textContent = `Exported ${exportData.length} colors successfully!`;
+                    statusEl.className = 'cmw-status success show';
+                    setTimeout(() => {
+                        statusEl.className = 'cmw-status';
+                    }, 3000);
+                }
+                
+                } catch (error) {
+                    console.error('Export failed:', error);
+                    if (statusEl) {
+                        statusEl.textContent = `Export failed: ${error.message}`;
+                        statusEl.className = 'cmw-status error show';
+                    }
+                }
             }
             
             function exportAsCSV(library, filename) {
@@ -9086,8 +9529,15 @@ Think of it like this:
                     const a = (color.a !== undefined ? color.a : color.lab[1]).toFixed(2);
                     const b = (color.b !== undefined ? color.b : color.lab[2]).toFixed(2);
                     
-                    // Convert Lab to Hex for preview
-                    const hex = lab2hex(parseFloat(L), parseFloat(a), parseFloat(b));
+                    // Use hex from library if available, otherwise use client-side conversion
+                    // (Client-side conversion is not accurate - library should have hex values!)
+                    let hex;
+                    if (color.hex) {
+                        hex = color.hex.startsWith('#') ? color.hex : '#' + color.hex;
+                    } else {
+                        console.warn(`⚠️ No hex value for ${color.name} - using client-side conversion (not accurate!)`);
+                        hex = lab2hex(parseFloat(L), parseFloat(a), parseFloat(b));
+                    }
                     const notes = `"${(color.notes || '').replace(/"/g, '""')}"`;
                     
                     csv += `${name},${L},${a},${b},${hex},${notes}\n`;
@@ -9099,13 +9549,40 @@ Think of it like this:
             
             async function exportAsASE(library, filename, colorMode) {
                 // Send to backend for ASE generation
+                // Prepare colors based on mode: send what we have, API will convert if needed
+                const aseColors = library.colors.map(c => {
+                    const color = {
+                        name: c.name,
+                        L: c.L,
+                        a: c.a,
+                        b: c.b
+                    };
+                    
+                    // Include RGB if available (for RGB mode)
+                    if (c.rgb_r !== undefined && c.rgb_g !== undefined && c.rgb_b !== undefined) {
+                        color.rgb_r = c.rgb_r;
+                        color.rgb_g = c.rgb_g;
+                        color.rgb_b = c.rgb_b;
+                    }
+                    
+                    // Include CMYK if available (for CMYK mode)
+                    if (c.cmyk_c !== undefined && c.cmyk_m !== undefined && c.cmyk_y !== undefined && c.cmyk_k !== undefined) {
+                        color.cmyk_c = c.cmyk_c;
+                        color.cmyk_m = c.cmyk_m;
+                        color.cmyk_y = c.cmyk_y;
+                        color.cmyk_k = c.cmyk_k;
+                    }
+                    
+                    return color;
+                });
+                
                 const apiUrl = getApiBaseUrl();
                 const response = await fetch(`${apiUrl}/export-ase`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         library_name: library.name,
-                        colors: library.colors,
+                        colors: aseColors,
                         color_mode: colorMode  // Default: 'lab' (device-independent)
                     })
                 });
@@ -9138,13 +9615,21 @@ Think of it like this:
             
             async function exportAsCXF(library, filename) {
                 // Send to backend for CXF generation
+                // CXF only needs name and Lab values - strip extra fields
+                const cxfColors = library.colors.map(c => ({
+                    name: c.name,
+                    L: c.L,
+                    a: c.a,
+                    b: c.b
+                }));
+                
                 const apiUrl = getApiBaseUrl();
                 const response = await fetch(`${apiUrl}/export-cxf`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         library_name: library.name,
-                        colors: library.colors
+                        colors: cxfColors
                     })
                 });
                 
@@ -9192,23 +9677,71 @@ Think of it like this:
                             throw new Error('Invalid format');
                         }
                         
-                        // Validate colors and preserve all metadata (amazon_link, manufacturer_link, etc.)
-                        const validColors = colors.filter(c => 
-                            c && typeof c.name === 'string' && 
-                            typeof c.L === 'number' && 
-                            typeof c.a === 'number' && 
-                            typeof c.b === 'number'
-                        ).map(c => ({
-                            ...c, // Preserve all fields from original color object
-                            name: c.name,
-                            L: c.L,
-                            a: c.a,
-                            b: c.b
-                        }));
+                        // Auto-detect nested format and flatten it
+                        if (colors.length > 0 && colors[0]) {
+                            const first = colors[0];
+                            console.log('📋 Import: First color structure:', first);
+                            
+                            const hasNestedStructure = (
+                                (first.rgb && typeof first.rgb === 'object' && 'r' in first.rgb) ||
+                                (first.lab && typeof first.lab === 'object' && 'l' in first.lab) ||
+                                (first.cmyk && typeof first.cmyk === 'object' && 'c' in first.cmyk)
+                            );
+                            
+                            if (hasNestedStructure) {
+                                console.log('✓ Auto-detected nested format in imported file');
+                                colors = parseNestedFormat(colors, libraryName);
+                                console.log('📋 After parsing, first color:', colors[0]);
+                            }
+                        }
+                        
+                        // Validate colors and preserve all metadata (amazon_link, manufacturer_link, cmyk, etc.)
+                        console.log(`📋 Validating ${colors.length} colors...`);
+                        const validColors = [];
+                        const invalidColors = [];
+                        
+                        for (let i = 0; i < colors.length; i++) {
+                            const c = colors[i];
+                            if (!c) {
+                                invalidColors.push({ index: i, reason: 'null/undefined' });
+                                continue;
+                            }
+                            if (typeof c.name !== 'string') {
+                                invalidColors.push({ index: i, reason: 'missing/invalid name', color: c });
+                                continue;
+                            }
+                            if (typeof c.L !== 'number') {
+                                invalidColors.push({ index: i, reason: `missing/invalid L (type: ${typeof c.L})`, color: c });
+                                continue;
+                            }
+                            if (typeof c.a !== 'number') {
+                                invalidColors.push({ index: i, reason: `missing/invalid a (type: ${typeof c.a})`, color: c });
+                                continue;
+                            }
+                            if (typeof c.b !== 'number') {
+                                invalidColors.push({ index: i, reason: `missing/invalid b (type: ${typeof c.b})`, color: c });
+                                continue;
+                            }
+                            
+                            // Valid color - preserve all fields
+                            validColors.push({
+                                ...c, // Preserve all fields from original color object
+                                name: c.name,
+                                L: c.L,
+                                a: c.a,
+                                b: c.b
+                            });
+                        }
+                        
+                        if (invalidColors.length > 0) {
+                            console.warn(`⚠ ${invalidColors.length} colors failed validation:`, invalidColors.slice(0, 3));
+                        }
                         
                         if (validColors.length === 0) {
-                            throw new Error('No valid colors found in file');
+                            throw new Error(`No valid colors found in file. ${invalidColors.length} colors failed validation.`);
                         }
+                        
+                        console.log(`✓ ${validColors.length} valid colors ready for import`);
                         
                         // Create new library
                         const id = generateLibraryId(libraryName);
@@ -9879,9 +10412,6 @@ Think of it like this:
             document.getElementById('cmw-custom-hex').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') addCustomColor();
             });
-            
-            // Load custom libraries on init
-            loadCustomLibraries();
 
             /* ─────────────────────
                Color Info Modal
@@ -9902,10 +10432,40 @@ Think of it like this:
                 currentColor: null
             };
             
-            // Show the color modal with LittleCMS API conversion
-            // If originalHex is provided, it will be displayed as the hex value (for user-entered hex)
+            // Debug: Verify modal elements exist
+            console.log('Color modal initialized:', {
+                overlay: !!colorModal.overlay,
+                swatch: !!colorModal.swatch,
+                name: !!colorModal.name,
+                lab: !!colorModal.lab,
+                hex: !!colorModal.hex,
+                rgb: !!colorModal.rgb,
+                cmyk: !!colorModal.cmyk,
+                closeBtn: !!colorModal.closeBtn
+            });
+            
+            /**
+             * 🎨 UNIFIED COLOR MODAL SYSTEM
+             * 
+             * VISUAL CONSISTENCY RULE:
+             * - Popup swatch = clicked swatch color (passed as displayColor)
+             * 
+             * DATA PRIORITY:
+             * 1. USE LIBRARY VALUES (if available) - NO conversion needed
+             *    - RGB values from library → display as-is
+             *    - Hex values from library → display as-is  
+             *    - CMYK values from library → display as-is
+             * 
+             * 2. FALLBACK TO API (if values missing) - Accurate CAT16 conversion
+             *    - LittleCMS API with CAT16 chromatic adaptation
+             *    - CIE Lab D50 → sRGB (sRGB.icc profile)
+             *    - CIE Lab D50 → CMYK (GRACoL2013.icc profile)
+             * 
+             * All libraries MUST have Lab values. RGB/CMYK/Hex are optional.
+             */
             async function showColorModal(colorData) {
-                const { name, L, a, b, originalHex, libraryName, amazon_link, manufacturer_link } = colorData;
+                console.log('showColorModal called with:', colorData);
+                const { name, L, a, b, originalHex, libraryName, amazon_link, manufacturer_link, cmyk_c, cmyk_m, cmyk_y, cmyk_k, rgb_r, rgb_g, rgb_b, hex, displayColor } = colorData;
                 
                 // Format the display name based on library
                 let displayName = name || 'Color';
@@ -9936,101 +10496,222 @@ Think of it like this:
                 const modalAddStatus = document.getElementById('cmw-modal-add-status');
                 if (modalAddStatus) modalAddStatus.className = 'cmw-modal-add-status';
                 
-                // Fetch LittleCMS conversions BEFORE showing modal to prevent flicker
-                try {
-                    const apiUrl = getApiBaseUrl();
-                    const currentIntent = document.getElementById('cmw-default-intent')?.value || '1';
-                    const renderingIntent = currentIntent !== 'none' ? parseInt(currentIntent) : 1;
+                // Check what data we already have from the library
+                const hasRGB = (typeof rgb_r === 'number' && typeof rgb_g === 'number' && typeof rgb_b === 'number');
+                const hasHex = (hex && typeof hex === 'string');
+                const hasCMYK = (typeof cmyk_c === 'number' && typeof cmyk_m === 'number' && 
+                                 typeof cmyk_y === 'number' && typeof cmyk_k === 'number');
+                
+                console.log('🎨 Modal Data Check:', {
+                    name: displayName,
+                    hasRGB,
+                    hasHex,
+                    hasCMYK,
+                    needsAPI: !hasRGB || !hasHex || !hasCMYK
+                });
+                
+                // Initialize values
+                let hexValue = '#000000';
+                let rgbValues = { r: 0, g: 0, b: 0 };
+                let cmykValues = { c: 0, m: 0, y: 0, k: 100 };
+                
+                // USE KNOWN DATA FIRST - NO CONVERSION NEEDED!
+                if (hasRGB) {
+                    rgbValues = {
+                        r: Math.round(rgb_r),
+                        g: Math.round(rgb_g),
+                        b: Math.round(rgb_b)
+                    };
+                    console.log('✓ Using RGB from library (no conversion):', rgbValues);
+                }
+                
+                if (hasHex) {
+                    hexValue = hex.toUpperCase();
+                    if (!hexValue.startsWith('#')) hexValue = '#' + hexValue;
+                    console.log('✓ Using Hex from library (no conversion):', hexValue);
+                }
+                
+                if (hasCMYK) {
+                    cmykValues = { c: cmyk_c, m: cmyk_m, y: cmyk_y, k: cmyk_k };
+                    console.log('✓ Using CMYK from library (no conversion):', cmykValues);
+                }
+                
+                // Only fetch from API if we're missing data
+                const needsRGB = !hasRGB;
+                const needsHex = !hasHex;
+                const needsCMYK = !hasCMYK;
+                
+                if (needsRGB || needsHex || needsCMYK) {
+                    console.log('⚙️ Fetching missing data from LittleCMS API...', {
+                        needsRGB,
+                        needsHex,
+                        needsCMYK
+                    });
                     
-                    // Make two API calls: one for RGB (sRGB.icc) and one for CMYK (GRACoL2013.icc)
-                    const [srgbResponse, cmykResponse] = await Promise.all([
-                        fetch(`${apiUrl}/convert`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                lab: [L, a, b],
-                                profile: 'sRGB.icc',
-                                renderingIntent: renderingIntent
-                            })
-                        }),
-                        fetch(`${apiUrl}/convert`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                lab: [L, a, b],
-                                profile: 'GRACoL2013.icc',
-                                renderingIntent: renderingIntent
-                            })
-                        })
-                    ]);
-                    
-                    if (!srgbResponse.ok) {
-                        throw new Error(`API error (sRGB): ${srgbResponse.status}`);
+                    try {
+                        const apiUrl = getApiBaseUrl();
+                        const currentIntent = document.getElementById('cmw-default-intent')?.value || '1';
+                        const renderingIntent = currentIntent !== 'none' ? parseInt(currentIntent) : 1;
+                        
+                        // Only make API calls for what we need
+                        const apiCalls = [];
+                        
+                        if (needsRGB || needsHex) {
+                            apiCalls.push(
+                                fetch(`${apiUrl}/convert`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        lab: [L, a, b],
+                                        profile: 'sRGB.icc',
+                                        renderingIntent: renderingIntent
+                                    })
+                                })
+                            );
+                        } else {
+                            apiCalls.push(null);
+                        }
+                        
+                        if (needsCMYK) {
+                            apiCalls.push(
+                                fetch(`${apiUrl}/convert`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        lab: [L, a, b],
+                                        profile: 'GRACoL2013.icc',
+                                        renderingIntent: renderingIntent
+                                    })
+                                })
+                            );
+                        } else {
+                            apiCalls.push(null);
+                        }
+                        
+                        const [srgbResponse, cmykResponse] = await Promise.all(apiCalls);
+                        
+                        // Process sRGB API response if we made the call
+                        if (srgbResponse && srgbResponse.ok) {
+                            const srgbData = await srgbResponse.json();
+                            console.log('📥 LittleCMS sRGB API response:', srgbData);
+                            
+                            if (needsRGB && srgbData.rgb && Array.isArray(srgbData.rgb)) {
+                                rgbValues = {
+                                    r: Math.round(srgbData.rgb[0]),
+                                    g: Math.round(srgbData.rgb[1]),
+                                    b: Math.round(srgbData.rgb[2])
+                                };
+                                console.log('✓ RGB from LittleCMS API:', rgbValues);
+                            } else if (needsRGB) {
+                                console.error('❌ API returned but no RGB data:', srgbData);
+                            }
+                            
+                            if (needsHex && srgbData.hex) {
+                                hexValue = srgbData.hex.toUpperCase();
+                                if (!hexValue.startsWith('#')) hexValue = '#' + hexValue;
+                                console.log('✓ Hex from LittleCMS API:', hexValue);
+                            } else if (needsHex) {
+                                console.error('❌ API returned but no hex data:', srgbData);
+                            }
+                        } else if (srgbResponse) {
+                            console.error('❌ LittleCMS sRGB API failed:', srgbResponse.status, srgbResponse.statusText);
+                        }
+                        
+                        // Build hex from API-provided RGB if needed (just encoding, not conversion)
+                        if (needsHex && hexValue === '#000000' && rgbValues.r !== 0 && rgbValues.g !== 0 && rgbValues.b !== 0) {
+                            hexValue = `#${rgbValues.r.toString(16).padStart(2, '0')}${rgbValues.g.toString(16).padStart(2, '0')}${rgbValues.b.toString(16).padStart(2, '0')}`.toUpperCase();
+                            console.log('✓ Built Hex from API RGB (encoding only):', hexValue);
+                        }
+                        
+                        // Log error if API failed to provide data
+                        if (needsHex && hexValue === '#000000') {
+                            console.error('❌ LittleCMS API failed to provide hex value');
+                        }
+                        if (needsRGB && rgbValues.r === 0 && rgbValues.g === 0 && rgbValues.b === 0) {
+                            console.error('❌ LittleCMS API failed to provide RGB values');
+                        }
+                        
+                        // Process CMYK API response if we made the call
+                        if (needsCMYK && cmykResponse && cmykResponse.ok) {
+                            const cmykData = await cmykResponse.json();
+                            console.log('📥 LittleCMS CMYK API response:', cmykData);
+                            
+                            if (cmykData.gamut && cmykData.gamut.cmykEquivalent && Array.isArray(cmykData.gamut.cmykEquivalent)) {
+                                const cmyk = cmykData.gamut.cmykEquivalent;
+                                cmykValues = {
+                                    c: parseFloat(cmyk[0].toFixed(1)),
+                                    m: parseFloat(cmyk[1].toFixed(1)),
+                                    y: parseFloat(cmyk[2].toFixed(1)),
+                                    k: parseFloat(cmyk[3].toFixed(1))
+                                };
+                                console.log('✓ CMYK from LittleCMS API:', cmykValues);
+                            } else if (cmykData.cmyk && Array.isArray(cmykData.cmyk)) {
+                                cmykValues = {
+                                    c: parseFloat(cmykData.cmyk[0].toFixed(1)),
+                                    m: parseFloat(cmykData.cmyk[1].toFixed(1)),
+                                    y: parseFloat(cmykData.cmyk[2].toFixed(1)),
+                                    k: parseFloat(cmykData.cmyk[3].toFixed(1))
+                                };
+                                console.log('✓ CMYK from LittleCMS API (direct):', cmykValues);
+                            } else if (needsCMYK) {
+                                console.error('❌ API returned but no CMYK data:', cmykData);
+                            }
+                        } else if (needsCMYK && cmykResponse) {
+                            console.error('❌ LittleCMS CMYK API failed:', cmykResponse.status, cmykResponse.statusText);
+                        }
+                    } catch (error) {
+                        console.error('❌ LittleCMS API conversion failed:', error);
+                        console.error('API call details:', {
+                            apiUrl: getApiBaseUrl(),
+                            lab: [L, a, b],
+                            needsRGB,
+                            needsHex,
+                            needsCMYK
+                        });
+                        // Library data will be used if available, otherwise display will show error
                     }
-                    
-                    const srgbData = await srgbResponse.json();
-                    const cmykData = cmykResponse.ok ? await cmykResponse.json() : null;
-                    console.log('LittleCMS color conversion (sRGB):', srgbData);
-                    console.log('LittleCMS color conversion (CMYK):', cmykData);
-                    
-                    // Extract values from API response
-                    let hexValue = '#000000';
-                    let rgbValues = { r: 0, g: 0, b: 0 };
-                    let cmykValues = { c: 0, m: 0, y: 0, k: 100 };
-                    
-                    // Get RGB from sRGB API response
-                    if (srgbData.rgb && Array.isArray(srgbData.rgb)) {
-                        rgbValues = {
-                            r: Math.round(srgbData.rgb[0]),
-                            g: Math.round(srgbData.rgb[1]),
-                            b: Math.round(srgbData.rgb[2])
-                        };
-                    }
-                    
-                    // Get Hex from sRGB API
-                    if (srgbData.hex) {
-                        hexValue = srgbData.hex.toUpperCase();
-                        if (!hexValue.startsWith('#')) hexValue = '#' + hexValue;
-                    } else {
-                        // Build from RGB if no hex provided
-                        hexValue = `#${rgbValues.r.toString(16).padStart(2, '0')}${rgbValues.g.toString(16).padStart(2, '0')}${rgbValues.b.toString(16).padStart(2, '0')}`.toUpperCase();
-                    }
-                    
-                    // Get CMYK from GRACoL2013 API response
-                    if (cmykData && cmykData.gamut && cmykData.gamut.cmykEquivalent && Array.isArray(cmykData.gamut.cmykEquivalent)) {
-                        const cmyk = cmykData.gamut.cmykEquivalent;
-                        cmykValues = {
-                            c: parseFloat(cmyk[0].toFixed(1)),
-                            m: parseFloat(cmyk[1].toFixed(1)),
-                            y: parseFloat(cmyk[2].toFixed(1)),
-                            k: parseFloat(cmyk[3].toFixed(1))
-                        };
-                    } else if (cmykData && cmykData.cmyk && Array.isArray(cmykData.cmyk)) {
-                        // Fallback to direct cmyk field if present
-                        cmykValues = {
-                            c: parseFloat(cmykData.cmyk[0].toFixed(1)),
-                            m: parseFloat(cmykData.cmyk[1].toFixed(1)),
-                            y: parseFloat(cmykData.cmyk[2].toFixed(1)),
-                            k: parseFloat(cmykData.cmyk[3].toFixed(1))
-                        };
-                    }
-                    
-                    // Use original hex if provided (user entered it), otherwise use API hex
+                } else {
+                    console.log('✅ All data from library - no API calls needed!');
+                }
+                
+                // 🎯 VISUAL CONSISTENCY: Popup swatch = clicked swatch color
+                // Use displayColor if provided (actual displayed color), otherwise build from data
+                let swatchColor;
+                if (displayColor) {
+                    swatchColor = displayColor;
+                    console.log('✓ Using clicked swatch color directly:', swatchColor);
+                } else {
+                    // Build from hex data
                     let displayHex = originalHex ? originalHex.toUpperCase() : hexValue;
                     if (!displayHex.startsWith('#')) {
                         displayHex = '#' + displayHex;
                     }
                     
-                    // Store all color values
+                    // Validate hex - if invalid, the API conversion failed
+                    if (!displayHex || displayHex === '#' || displayHex.length < 7) {
+                        console.error('❌ Invalid hex value - LittleCMS API conversion failed!', {
+                            displayHex,
+                            hexValue,
+                            originalHex,
+                            lab: [L, a, b]
+                        });
+                        // Show a visible error swatch so user knows API failed
+                        displayHex = '#FF0000'; // Red = API error
+                    }
+                    swatchColor = displayHex;
+                }
+                    
+                    // Store all color values (for text display and copying)
                     colorModal.currentColor = {
                         lab: `${L.toFixed(2)}, ${a.toFixed(2)}, ${b.toFixed(2)}`,
-                        hex: displayHex,
+                        hex: hexValue.toUpperCase().startsWith('#') ? hexValue.toUpperCase() : '#' + hexValue.toUpperCase(),
                         rgb: `${rgbValues.r}, ${rgbValues.g}, ${rgbValues.b}`,
                         cmyk: `${cmykValues.c}, ${cmykValues.m}, ${cmykValues.y}, ${cmykValues.k}`
                     };
                     
                     // NOW show the modal with all data ready - no flicker
-                    colorModal.swatch.style.background = displayHex;
+                    console.log('Setting modal swatch color to:', swatchColor);
+                    colorModal.swatch.style.background = swatchColor;
                     colorModal.name.textContent = displayName;
                     colorModal.lab.textContent = colorModal.currentColor.lab;
                     colorModal.hex.textContent = colorModal.currentColor.hex;
@@ -10060,30 +10741,6 @@ Think of it like this:
                     
                     colorModal.overlay.classList.add('show');
                     document.body.style.overflow = 'hidden';
-                    
-                } catch (error) {
-                    console.error('LittleCMS conversion failed:', error);
-                    // Show modal with error state - no fallback to local JS conversion
-                    colorModal.swatch.style.background = originalHex || '#f0f0f0';
-                    colorModal.name.textContent = displayName;
-                    colorModal.lab.textContent = `${L.toFixed(2)}, ${a.toFixed(2)}, ${b.toFixed(2)}`;
-                    colorModal.hex.textContent = 'LittleCMS API Error';
-                    colorModal.rgb.textContent = 'LittleCMS API Error';
-                    colorModal.cmyk.textContent = 'LittleCMS API Error';
-                    
-                    colorModal.currentColor = {
-                        lab: `${L.toFixed(2)}, ${a.toFixed(2)}, ${b.toFixed(2)}`,
-                        hex: '',
-                        rgb: '',
-                        cmyk: ''
-                    };
-                    
-                    // Hide purchase links on error
-                    colorModal.purchaseLinks.style.display = 'none';
-                    
-                    colorModal.overlay.classList.add('show');
-                    document.body.style.overflow = 'hidden';
-                }
             }
             
             // Hide the color modal
@@ -10281,9 +10938,12 @@ Think of it like this:
             
             // Delegate click events for all swatches (results table, custom library, etc.)
             document.addEventListener('click', (e) => {
+                console.log('Click detected:', e.target);
+                
                 // Check for main color search preview swatch
                 const mainPreview = e.target.closest('#cmw-color-preview');
                 if (mainPreview) {
+                    console.log('Main preview clicked');
                     // Get Lab values from the preview's dataset or current color data
                     const L = parseFloat(mainPreview.dataset.selectedL);
                     const a = parseFloat(mainPreview.dataset.selectedA);
@@ -10292,7 +10952,18 @@ Think of it like this:
                     const libraryName = mainPreview.dataset.selectedLibrary || '';
                     
                     if (!isNaN(L) && !isNaN(a) && !isNaN(b)) {
-                        // Library color selected - pass all metadata including purchase links
+                        // Library color selected - pass all metadata including purchase links, RGB & CMYK
+                        const rgb_r = mainPreview.dataset.rgbR && mainPreview.dataset.rgbR !== '' ? parseFloat(mainPreview.dataset.rgbR) : undefined;
+                        const rgb_g = mainPreview.dataset.rgbG && mainPreview.dataset.rgbG !== '' ? parseFloat(mainPreview.dataset.rgbG) : undefined;
+                        const rgb_b = mainPreview.dataset.rgbB && mainPreview.dataset.rgbB !== '' ? parseFloat(mainPreview.dataset.rgbB) : undefined;
+                        const cmyk_c = mainPreview.dataset.cmykC && mainPreview.dataset.cmykC !== '' ? parseFloat(mainPreview.dataset.cmykC) : undefined;
+                        const cmyk_m = mainPreview.dataset.cmykM && mainPreview.dataset.cmykM !== '' ? parseFloat(mainPreview.dataset.cmykM) : undefined;
+                        const cmyk_y = mainPreview.dataset.cmykY && mainPreview.dataset.cmykY !== '' ? parseFloat(mainPreview.dataset.cmykY) : undefined;
+                        const cmyk_k = mainPreview.dataset.cmykK && mainPreview.dataset.cmykK !== '' ? parseFloat(mainPreview.dataset.cmykK) : undefined;
+                        
+                        // Get the actual displayed color from the swatch
+                        const displayColor = window.getComputedStyle(mainPreview).backgroundColor;
+                        
                         showColorModal({ 
                             name, 
                             libraryName, 
@@ -10300,27 +10971,95 @@ Think of it like this:
                             a, 
                             b,
                             amazon_link: mainPreview.dataset.amazonLink,
-                            manufacturer_link: mainPreview.dataset.manufacturerLink
+                            manufacturer_link: mainPreview.dataset.manufacturerLink,
+                            hex: mainPreview.dataset.hex || undefined,
+                            rgb_r,
+                            rgb_g,
+                            rgb_b,
+                            cmyk_c,
+                            cmyk_m,
+                            cmyk_y,
+                            cmyk_k,
+                            displayColor
                         });
                     } else if (currentColorData && currentColorData.L !== undefined) {
                         // User entered a value (hex, Lab, RGB, CMYK)
                         // Only pass originalHex if user typed a hex directly
                         const originalHexInput = mainPreview.dataset.originalHexInput;
                         
+                        // Get the actual displayed color from the swatch
+                        const displayColor = window.getComputedStyle(mainPreview).backgroundColor;
+                        
                         showColorModal({
                             name: 'Current Color',
                             L: currentColorData.L,
                             a: currentColorData.a,
                             b: currentColorData.b,
-                            originalHex: originalHexInput || null // Only set if user typed hex
+                            originalHex: originalHexInput || null, // Only set if user typed hex
+                            displayColor
                         });
                     }
                     return;
                 }
                 
-                // Check for result table rows - read data from row dataset
+                // Check for compare swatches
+                const compareSwatch = e.target.closest('#cmw-compare-swatch-1, #cmw-compare-swatch-2');
+                if (compareSwatch) {
+                    const colorNum = compareSwatch.id === 'cmw-compare-swatch-1' ? 1 : 2;
+                    const compareColor = colorNum === 1 ? compareColor1 : compareColor2;
+                    
+                    console.log(`🔍 Compare Color ${colorNum} clicked:`, compareColor);
+                    
+                    if (compareColor && compareColor.lab) {
+                        // Get the actual displayed color from the clicked swatch
+                        const displayColor = window.getComputedStyle(compareSwatch).backgroundColor;
+                        
+                        const modalData = {
+                            name: compareColor.name || `Color ${colorNum}`,
+                            libraryName: compareColor.libraryName || '',
+                            L: compareColor.lab.L,
+                            a: compareColor.lab.a,
+                            b: compareColor.lab.b,
+                            hex: compareColor.hex,
+                            originalHex: compareColor.hex,
+                            // Pass RGB if user entered RGB values
+                            rgb_r: compareColor.rgb_r,
+                            rgb_g: compareColor.rgb_g,
+                            rgb_b: compareColor.rgb_b,
+                            // Pass CMYK if user entered CMYK values
+                            cmyk_c: compareColor.cmyk_c,
+                            cmyk_m: compareColor.cmyk_m,
+                            cmyk_y: compareColor.cmyk_y,
+                            cmyk_k: compareColor.cmyk_k,
+                            displayColor
+                        };
+                        console.log('📤 Passing to modal:', modalData);
+                        showColorModal(modalData);
+                    }
+                    return;
+                }
+                
+                // Check for result table rows - read data from row dataset (including RGB & CMYK)
                 const tableRow = e.target.closest('#cmw-out tbody tr');
+                console.log('Table row check:', tableRow, tableRow?.dataset);
                 if (tableRow && tableRow.dataset.colorL) {
+                    console.log('Opening modal for table row:', tableRow.dataset.colorName);
+                    
+                    // Parse RGB if present (convert empty strings to undefined)
+                    const rgb_r = tableRow.dataset.rgbR && tableRow.dataset.rgbR !== '' ? parseFloat(tableRow.dataset.rgbR) : undefined;
+                    const rgb_g = tableRow.dataset.rgbG && tableRow.dataset.rgbG !== '' ? parseFloat(tableRow.dataset.rgbG) : undefined;
+                    const rgb_b = tableRow.dataset.rgbB && tableRow.dataset.rgbB !== '' ? parseFloat(tableRow.dataset.rgbB) : undefined;
+                    
+                    // Parse CMYK if present (convert empty strings to undefined)
+                    const cmyk_c = tableRow.dataset.cmykC && tableRow.dataset.cmykC !== '' ? parseFloat(tableRow.dataset.cmykC) : undefined;
+                    const cmyk_m = tableRow.dataset.cmykM && tableRow.dataset.cmykM !== '' ? parseFloat(tableRow.dataset.cmykM) : undefined;
+                    const cmyk_y = tableRow.dataset.cmykY && tableRow.dataset.cmykY !== '' ? parseFloat(tableRow.dataset.cmykY) : undefined;
+                    const cmyk_k = tableRow.dataset.cmykK && tableRow.dataset.cmykK !== '' ? parseFloat(tableRow.dataset.cmykK) : undefined;
+                    
+                    // Get the actual displayed color from the swatch in the table row
+                    const swatchElement = tableRow.querySelector('.cmw-swatch');
+                    const displayColor = swatchElement ? window.getComputedStyle(swatchElement).backgroundColor : null;
+                    
                     showColorModal({
                         name: tableRow.dataset.colorName,
                         L: parseFloat(tableRow.dataset.colorL),
@@ -10329,9 +11068,18 @@ Think of it like this:
                         libraryName: tableRow.dataset.libraryName,
                         amazon_link: tableRow.dataset.amazonLink,
                         manufacturer_link: tableRow.dataset.manufacturerLink,
+                        hex: tableRow.dataset.hex || undefined,
                         originalHex: tableRow.dataset.hex,
                         manufacturer: tableRow.dataset.manufacturer,
-                        filament_type: tableRow.dataset.filamentType
+                        filament_type: tableRow.dataset.filamentType,
+                        rgb_r,
+                        rgb_g,
+                        rgb_b,
+                        cmyk_c,
+                        cmyk_m,
+                        cmyk_y,
+                        cmyk_k,
+                        displayColor
                     });
                     return;
                 }
@@ -10342,11 +11090,15 @@ Think of it like this:
                     const labText = document.getElementById('cmw-consensus-lab').textContent;
                     const labMatch = labText.match(/Lab\(([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\)/);
                     if (labMatch) {
+                        // Get the actual displayed color from the swatch
+                        const displayColor = window.getComputedStyle(consensusSwatch).backgroundColor;
+                        
                         showColorModal({
                             name: 'Consensus Color',
                             L: parseFloat(labMatch[1]),
                             a: parseFloat(labMatch[2]),
-                            b: parseFloat(labMatch[3])
+                            b: parseFloat(labMatch[3]),
+                            displayColor
                         });
                     }
                     return;
@@ -10365,12 +11117,16 @@ Think of it like this:
                             const labText = labEl.textContent;
                             const labMatch = labText.match(/Lab\(([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\)/);
                             if (labMatch) {
+                                // Get the actual displayed color from the swatch
+                                const displayColor = window.getComputedStyle(intentSwatch).backgroundColor;
+                                
                                 showColorModal({
                                     name: nameEl.textContent,
                                     L: parseFloat(labMatch[1]),
                                     a: parseFloat(labMatch[2]),
                                     b: parseFloat(labMatch[3]),
-                                    originalHex: lcmsHex // Use stored LittleCMS hex for consistency
+                                    originalHex: lcmsHex, // Use stored LittleCMS hex for consistency
+                                    displayColor
                                 });
                             }
                         }
@@ -10390,13 +11146,19 @@ Think of it like this:
                     const lcmsHex = harmonySwatch.dataset.lcmsHex || null;
                     
                     if (!isNaN(labL) && !isNaN(labA) && !isNaN(labB)) {
+                        // Get the actual displayed color from the swatch
+                        const displayColor = window.getComputedStyle(harmonySwatch).backgroundColor;
+                        
                         showColorModal({
                             name: colorName,
                             libraryName: libraryName,
                             L: labL,
                             a: labA,
                             b: labB,
-                            originalHex: lcmsHex // Pass the LittleCMS hex to ensure consistency
+                            originalHex: lcmsHex, // Pass the LittleCMS hex to ensure consistency
+                            amazon_link: harmonySwatch.dataset.amazonLink || null,
+                            manufacturer_link: harmonySwatch.dataset.manufacturerLink || null,
+                            displayColor
                         });
                     }
                     return;
