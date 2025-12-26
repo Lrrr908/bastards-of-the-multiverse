@@ -6660,7 +6660,31 @@ Think of it like this:
             const harmonyToggle = document.getElementById('cmw-harmony-toggle');
 
             setupInfiniteScroll();
-            initializeLibraryCounts();
+            
+            // Initialize with dynamic library loading
+            showLoading(true);
+            initializeLibraries()
+                .then(() => {
+                    showLoading(false);
+                    libsLoaded = true;
+                    const totalColors = Object.values(libs).reduce((sum, lib) => sum + (lib?.length || 0), 0);
+                    showStatus(`Color libraries loaded successfully! ${totalColors} colors available.`);
+                    console.log('All library fetches completed');
+                   
+                    // Update library counts after loading
+                    initializeLibraryCounts();
+                    
+                    // Check API connectivity after libraries are loaded
+                    setTimeout(() => {
+                        checkApiConnectivity();
+                    }, 1000);
+                })
+                .catch((error) => {
+                    showLoading(false);
+                    console.error('Library initialization failed:', error);
+                    showStatus('Failed to load some color libraries. Functionality may be limited.', 'error');
+                    initializeLibraryCounts(); // Still initialize counts even on error
+                });
            
             // Initialize collapsible settings
             const settingsToggle = document.getElementById('cmw-settings-toggle');
@@ -10499,27 +10523,6 @@ Think of it like this:
                     return;
                 }
             });
-
-            // Initialize with dynamic library loading
-            showLoading(true);
-           
-            initializeLibraries()
-                .then(() => {
-                    showLoading(false);
-                    libsLoaded = true;
-                    const totalColors = Object.values(libs).reduce((sum, lib) => sum + (lib?.length || 0), 0);
-                    showStatus(`Color libraries loaded successfully! ${totalColors} colors available.`);
-                    console.log('All library fetches completed');
-                   
-                    // Check API connectivity after libraries are loaded
-                    setTimeout(() => {
-                        checkApiConnectivity();
-                    }, 1000); // Small delay so user sees library notification first
-                })
-                .catch(() => {
-                    showLoading(false);
-                    showStatus('Failed to load some color libraries. Functionality may be limited.', 'error');
-                });
         })();
     </script>
 </body>
