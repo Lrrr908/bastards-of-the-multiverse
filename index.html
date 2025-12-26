@@ -4136,9 +4136,12 @@ Think of it like this:
                 console.log('Custom libraries container added to grid');
                 
                 // Load all library data files (use allSettled to continue even if some fail)
-                const loadPromises = libraryManifest.map(lib => 
-                    loadLibrary(lib.id, BASE_URL + lib.file, lib.name)
-                );
+                const loadPromises = libraryManifest.map(lib => {
+                    // Determine URL - use lib.url if specified, otherwise construct from BASE_URL + file
+                    const url = lib.url || (lib.source === 'url' ? lib.url : BASE_URL + lib.file);
+                    const format = lib.format || 'json';
+                    return loadLibrary(lib.id, url, lib.name, format);
+                });
                 const results = await Promise.allSettled(loadPromises);
                 
                 const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length;
@@ -4149,15 +4152,33 @@ Think of it like this:
             }
         }
 
-        async function loadLibrary(id, url, name) {
+        async function loadLibrary(id, url, name, format = 'json') {
             try {
-                console.log(`Loading ${name} from ${url}...`);
+                console.log(`Loading ${name} from ${url} (format: ${format})...`);
                 const res = await fetch(url);
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status}`);
                 }
                 
-                const colors = await res.json();
+                let colors;
+                
+                // Handle different formats
+                if (format === 'filamentcolors') {
+                    // Filament Colors format - may have RGB that needs conversion
+                    const data = await res.json();
+                    colors = await parseFilamentColorsData(data, name);
+                } else if (format === 'cxf') {
+                    // CXF format - needs API endpoint
+                    const blob = await res.blob();
+                    colors = await parseCxfData(blob, name);
+                } else if (format === 'csv') {
+                    // CSV format - needs API endpoint
+                    const text = await res.text();
+                    colors = await parseCsvData(text, name);
+                } else {
+                    // Default JSON format
+                    colors = await res.json();
+                }
                 
                 // Validate it's an array
                 if (!Array.isArray(colors)) {
@@ -4180,13 +4201,11 @@ Think of it like this:
                         hex: color.hex || '#808080',
                         library: id,
                         libraryName: name,
-                        // Include optional fields if they exist
-                        ...(color.amazon && { amazon: color.amazon }),
-                        ...(color.manufacturer && { manufacturer: color.manufacturer }),
-                        ...(color.C !== undefined && { C: color.C }),
-                        ...(color.M !== undefined && { M: color.M }),
-                        ...(color.Y !== undefined && { Y: color.Y }),
-                        ...(color.K !== undefined && { K: color.K })
+                        // Preserve ALL original fields from the color object
+                        ...color,
+                        // But ensure these core fields are correct
+                        library: id,
+                        libraryName: name
                     };
                 }).filter(Boolean); // Remove any null entries
                
@@ -4208,6 +4227,109 @@ Think of it like this:
                 }
                 return false;
             }
+        }
+        
+        // Parse Filament Colors format (handles RGB -> Lab conversion)
+        async function parseFilamentColorsData(data, libraryName) {
+            const API_URL = document.getElementById('cmw-api-url')?.value || 'http://127.0.0.1:8000';
+            const colors = [];
+            
+            // Handle both array and nested format
+            const colorArray = Array.isArray(data) ? data : (data.colors || []);
+            
+            for (const item of colorArray) {
+                let color = { ...item };
+                
+                // If has Lab values, use them directly
+                if (typeof color.L === 'number' && typeof color.a === 'number' && typeof color.b === 'number') {
+                    colors.push(color);
+                    continue;
+                }
+                
+                // If has RGB but not Lab, convert via API
+                if (color.rgb || (typeof color.r === 'number' && typeof color.g === 'number' && typeof color.b === 'number')) {
+                    try {
+                        const rgb = color.rgb || { r: color.r, g: color.g, b: color.b };
+                        const response = await fetch(`${API_URL}/rgb-to-lab`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ r: rgb.r, g: rgb.g, b: rgb.b })
+                        });
+                        
+                        if (response.ok) {
+                            const labData = await response.json();
+                            color.L = labData.lab[0];
+                            color.a = labData.lab[1];
+                            color.b = labData.lab[2];
+                            colors.push(color);
+                        } else {
+                            console.warn(`Failed to convert RGB for color: ${color.name}`);
+                        }
+                    } catch (e) {
+                        console.warn(`RGB conversion failed for: ${color.name}`, e);
+                    }
+                } else if (color.hex) {
+                    // If has hex but not Lab, convert via API
+                    try {
+                        const response = await fetch(`${API_URL}/hex-to-lab/${encodeURIComponent(color.hex)}`);
+                        if (response.ok) {
+                            const labData = await response.json();
+                            color.L = labData.lab[0];
+                            color.a = labData.lab[1];
+                            color.b = labData.lab[2];
+                            colors.push(color);
+                        } else {
+                            console.warn(`Failed to convert hex for color: ${color.name}`);
+                        }
+                    } catch (e) {
+                        console.warn(`Hex conversion failed for: ${color.name}`, e);
+                    }
+                }
+            }
+            
+            console.log(`Parsed ${colors.length} colors from ${libraryName}`);
+            return colors;
+        }
+        
+        // Parse CXF format via API
+        async function parseCxfData(blob, libraryName) {
+            const API_URL = document.getElementById('cmw-api-url')?.value || 'http://127.0.0.1:8000';
+            
+            const formData = new FormData();
+            formData.append('file', blob, 'library.cxf');
+            
+            const response = await fetch(`${API_URL}/import-cxf`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                throw new Error('CXF parsing failed');
+            }
+            
+            const data = await response.json();
+            return data.colors || [];
+        }
+        
+        // Parse CSV format via API
+        async function parseCsvData(text, libraryName) {
+            const API_URL = document.getElementById('cmw-api-url')?.value || 'http://127.0.0.1:8000';
+            
+            const blob = new Blob([text], { type: 'text/csv' });
+            const formData = new FormData();
+            formData.append('file', blob, 'library.csv');
+            
+            const response = await fetch(`${API_URL}/import-csv`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                throw new Error('CSV parsing failed');
+            }
+            
+            const data = await response.json();
+            return data.colors || [];
         }
 
         /* 8. Library management functions */
