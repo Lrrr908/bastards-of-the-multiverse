@@ -2648,25 +2648,8 @@ Think of it like this:
        
         <div class="cmw-library-toggles">
             <h6>Color Libraries</h6>
-            <div class="cmw-toggle-grid">
-                <div class="cmw-toggle-item">
-                    <input type="checkbox" id="toggle-pantone" value="pantone" checked>
-                    <label for="toggle-pantone">PMS <span class="cmw-library-count" id="count-pantone">(0)</span></label>
-                </div>
-                <div class="cmw-toggle-item">
-                    <input type="checkbox" id="toggle-behr" value="behr" checked>
-                    <label for="toggle-behr">Behr <span class="cmw-library-count" id="count-behr">(0)</span></label>
-                </div>
-                <div class="cmw-toggle-item">
-                    <input type="checkbox" id="toggle-sherwin" value="sherwin" checked>
-                    <label for="toggle-sherwin">Sherwin Williams <span class="cmw-library-count" id="count-sherwin">(0)</span></label>
-                </div>
-                <div class="cmw-toggle-item">
-                    <input type="checkbox" id="toggle-bm" value="bm" checked>
-                    <label for="toggle-bm">Benjamin Moore <span class="cmw-library-count" id="count-bm">(0)</span></label>
-                </div>
-                <!-- Custom libraries will be dynamically added here (uses display:contents to flow into grid) -->
-                <div id="cmw-custom-libraries-container" style="display: contents;"></div>
+            <div class="cmw-toggle-grid" id="cmw-public-libraries-container">
+                <!-- Public libraries loaded dynamically from libraries.json -->
             </div>
            
             <div style="height: 1px; background: linear-gradient(to right, transparent, #e2e8f0 20%, #e2e8f0 80%, transparent); margin: 20px 0;"></div>
@@ -4061,24 +4044,74 @@ Think of it like this:
             }
         }
 
-        /* 7. Original Library Loading (GitHub raw content URLs) */
-        const urls = {
-            pantone: 'https://raw.githubusercontent.com/Lrrr908/bastards-of-the-multiverse/main/files/theme/pantone.json',
-            behr: 'https://raw.githubusercontent.com/Lrrr908/bastards-of-the-multiverse/main/files/theme/behr.json',
-            sherwin: 'https://raw.githubusercontent.com/Lrrr908/bastards-of-the-multiverse/main/files/theme/sherwin.json',
-            bm: 'https://raw.githubusercontent.com/Lrrr908/bastards-of-the-multiverse/main/files/theme/benjaminmoore.json'
-        };
-
+        /* 7. Dynamic Library Loading System */
+        const BASE_URL = 'https://raw.githubusercontent.com/Lrrr908/bastards-of-the-multiverse/main/files/theme/';
         const libs = {};
-       
-        const libNames = {
-            pantone: 'PMS',
-            behr: 'Behr',
-            sherwin: 'Sherwin Williams',
-            bm: 'Benjamin Moore'
-        };
+        const libNames = {};
+        let libraryManifest = [];
 
-        async function load(id, url) {
+        // Load the library manifest and initialize all libraries
+        async function initializeLibraries() {
+            try {
+                console.log('Loading library manifest...');
+                const manifestRes = await fetch(BASE_URL + 'libraries.json');
+                if (!manifestRes.ok) throw new Error(`Manifest load failed: HTTP ${manifestRes.status}`);
+                
+                const manifestData = await manifestRes.json();
+                libraryManifest = manifestData.libraries.filter(lib => lib.enabled);
+                
+                console.log(`✔ Manifest loaded: ${libraryManifest.length} libraries`);
+                
+                // Create checkboxes for each library
+                const container = document.getElementById('cmw-public-libraries-container');
+                libraryManifest.forEach(lib => {
+                    libNames[lib.id] = lib.name;
+                    
+                    const toggleItem = document.createElement('div');
+                    toggleItem.className = 'cmw-toggle-item';
+                    
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = `toggle-${lib.id}`;
+                    checkbox.value = lib.id;
+                    checkbox.checked = true;
+                    
+                    const label = document.createElement('label');
+                    label.htmlFor = `toggle-${lib.id}`;
+                    
+                    const labelText = document.createTextNode(lib.name + ' ');
+                    const countSpan = document.createElement('span');
+                    countSpan.className = 'cmw-library-count';
+                    countSpan.id = `count-${lib.id}`;
+                    countSpan.textContent = '(0)';
+                    
+                    label.appendChild(labelText);
+                    label.appendChild(countSpan);
+                    toggleItem.appendChild(checkbox);
+                    toggleItem.appendChild(label);
+                    container.appendChild(toggleItem);
+                });
+                
+                // Add custom libraries container after public libraries
+                const customContainer = document.createElement('div');
+                customContainer.id = 'cmw-custom-libraries-container';
+                customContainer.style.display = 'contents';
+                container.parentElement.appendChild(customContainer);
+                
+                // Load all library data files
+                const loadPromises = libraryManifest.map(lib => 
+                    loadLibrary(lib.id, BASE_URL + lib.file, lib.name)
+                );
+                await Promise.all(loadPromises);
+                
+                console.log('✔ All libraries initialized');
+            } catch (e) {
+                console.error('✖ Failed to initialize libraries:', e);
+                // Fallback to empty state
+            }
+        }
+
+        async function loadLibrary(id, url, name) {
             try {
                 const res = await fetch(url);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -4087,7 +4120,7 @@ Think of it like this:
                 libs[id] = colors.map(color => ({
                     ...color,
                     library: id,
-                    libraryName: libNames[id]
+                    libraryName: name
                 }));
                
                 const countEl = document.getElementById(`count-${id}`);
@@ -4095,9 +4128,9 @@ Think of it like this:
                     countEl.textContent = `(${colors.length})`;
                 }
                
-                console.log(`✔ ${id} loaded (${libs[id].length} colors)`);
+                console.log(`✔ ${name} loaded (${libs[id].length} colors)`);
             } catch (e) {
-                console.error(`✖ ${id} failed (${url})`, e);
+                console.error(`✖ ${name} failed (${url})`, e);
                 libs[id] = [];
             }
         }
@@ -4105,14 +4138,13 @@ Think of it like this:
         /* 8. Library management functions */
         function getActiveLibraries() {
             const activeLibs = [];
-            // Check built-in libraries
-            ['pantone', 'behr', 'sherwin', 'bm'].forEach(libId => {
-                const checkbox = document.getElementById(`toggle-${libId}`);
-                if (checkbox && checkbox.checked) {
-                    activeLibs.push(libId);
+            // Check all public libraries
+            document.querySelectorAll('#cmw-public-libraries-container input[type="checkbox"]').forEach(checkbox => {
+                if (checkbox.checked && checkbox.value) {
+                    activeLibs.push(checkbox.value);
                 }
             });
-            // Check custom libraries (dynamically added checkboxes)
+            // Check custom libraries
             document.querySelectorAll('#cmw-custom-libraries-container input[type="checkbox"]').forEach(checkbox => {
                 if (checkbox.checked && checkbox.value) {
                     activeLibs.push(checkbox.value);
@@ -4122,14 +4154,13 @@ Think of it like this:
         }
 
         function initializeLibraryCounts() {
-            // Update counts for built-in libraries
-            ['pantone', 'behr', 'sherwin', 'bm'].forEach(libId => {
+            // Update counts for all libraries (both public and custom)
+            Object.keys(libs).forEach(libId => {
                 const countEl = document.getElementById(`count-${libId}`);
                 if (countEl && libs[libId]) {
                     countEl.textContent = `(${libs[libId].length})`;
                 }
             });
-            // Custom library counts are updated by updateLibraryToggles()
         }
 
         function nearest(L, a, b, maxPerLibrary = 1, excludeExactMatch = null) {
@@ -10394,10 +10425,10 @@ Think of it like this:
                 }
             });
 
-            // Initialize with original library loading
+            // Initialize with dynamic library loading
             showLoading(true);
            
-            Promise.allSettled(Object.entries(urls).map(([id, u]) => load(id, u)))
+            initializeLibraries()
                 .then(() => {
                     showLoading(false);
                     libsLoaded = true;
