@@ -1,0 +1,35 @@
+{
+  "libraries": [
+    {
+      "id": "pantone",
+      "name": "PMS",
+      "file": "pantone.json",
+      "enabled": true
+    },
+    {
+      "id": "behr",
+      "name": "Behr",
+      "file": "behr.json",
+      "enabled": true
+    },
+    {
+      "id": "sherwin",
+      "name": "Sherwin Williams",
+      "file": "sherwin.json",
+      "enabled": true
+    },
+    {
+      "id": "bm",
+      "name": "Benjamin Moore",
+      "file": "benjaminmoore.json",
+      "enabled": true
+    },
+    {
+      "id": "filamentcolors",
+      "name": "Filament Colors",
+      "file": "filamentcolors.json",
+      "enabled": true
+    }
+  ]
+}
+
