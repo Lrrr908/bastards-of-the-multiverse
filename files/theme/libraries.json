@@ -30,11 +30,12 @@
     },
     {
       "id": "filamentcolors",
-      "name": "Filament Colors",
+      "name": "FilamentColors.xyz",
       "file": "filamentcolors.json",
       "format": "filamentcolors",
       "enabled": true
     }
   ]
 }
+
 
