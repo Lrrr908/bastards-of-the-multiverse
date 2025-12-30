@@ -1,9 +1,9 @@
 {
   "libraries": [
     {
-      "id": "pantone",
-      "name": "PMS",
-      "file": "pantone.json",
+      "id": "adcolor",
+      "name": "Scan of Solid Coated Fanbook",
+      "file": "AdColor_Solid_Coated_V5.json",
       "format": "json",
       "enabled": true
     },
@@ -30,12 +30,136 @@
     },
     {
       "id": "filamentcolors",
-      "name": "FilamentColors.xyz",
+      "name": "Filament Colors",
       "file": "filamentcolors.json",
       "format": "filamentcolors",
+      "enabled": true
+    },
+    {
+      "id": "pantone_c_xrite",
+      "name": "Pantone C (X-Rite Spectral)",
+      "file": "pantone_c_xrite.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_solid_coated",
+      "name": "Pantone Solid Coated V5",
+      "file": "PANTONE_Solid_Coated_V5.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_solid_uncoated",
+      "name": "Pantone Solid Uncoated V5",
+      "file": "PANTONE_Solid_Uncoated_V5.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_cmyk_coated",
+      "name": "Pantone CMYK Coated",
+      "file": "PANTONE_CMYK_Coated.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_cmyk_uncoated",
+      "name": "Pantone CMYK Uncoated",
+      "file": "PANTONE_CMYK_Uncoated.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_metallics",
+      "name": "Pantone Metallics Coated",
+      "file": "PANTONE_METALLICS_Coated.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_pastels_neons_coated",
+      "name": "Pantone Pastels & Neons Coated",
+      "file": "PANTONE_Pastels_Neons_Coated.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_pastels_neons_uncoated",
+      "name": "Pantone Pastels & Neons Uncoated",
+      "file": "PANTONE_Pastels_Neons_Uncoated.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_extended_gamut",
+      "name": "Pantone Extended Gamut Coated",
+      "file": "PANTONE_Extended_Gamut_Coated.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_color_bridge_uncoated",
+      "name": "Pantone Color Bridge Uncoated V5",
+      "file": "PANTONE_Color_Bridge_Uncoated_V5.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_skintone",
+      "name": "Pantone SkinTone Guide",
+      "file": "PANTONE_SkinTone_Guide.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_fhi_cotton_2801",
+      "name": "Pantone FHI Cotton TCX 2801",
+      "file": "PANTONE_FHI_Cotton_TCX_2801.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_fhi_cotton_new",
+      "name": "Pantone FHI Cotton TCX New 175",
+      "file": "PANTONE_FHI_Cotton_TCX_New_175.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_fhi_paper_2801",
+      "name": "Pantone FHI Paper TPG 2801",
+      "file": "PANTONE_FHI_Paper_TPG_2801.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_fhi_paper_new",
+      "name": "Pantone FHI Paper TPG New 175",
+      "file": "PANTONE_FHI_PAPER_TPG_New_175.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_fhi_polyester",
+      "name": "Pantone FHI Polyester TSX",
+      "file": "PANTONE_FHI_Polyester_TSX.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_fhi_metallic",
+      "name": "Pantone FHI Metallic Shimmers TPM",
+      "file": "PANTONE_FHI_Metallic_Shimmers_TPM.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "pantone_nylon_brights",
+      "name": "Pantone FH Nylon Brights TN",
+      "file": "PANTONE_fh_nylon braights_TN.json",
+      "format": "json",
       "enabled": true
     }
   ]
 }
-
-
