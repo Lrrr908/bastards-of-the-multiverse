@@ -3523,6 +3523,16 @@ Think of it like this:
                         </div>
                         
                         <div id="cmw-libraries-status" style="text-align: center; color: #6b7280; margin-top: 16px;"></div>
+                        
+                        <!-- Bottom Navigation Buttons -->
+                        <div style="display: flex; justify-content: center; margin-top: 20px; gap: 12px;">
+                            <button id="cmw-libraries-prev-bottom" class="cmw-compare-btn" style="padding: 10px 20px; min-width: 140px;">
+                                ← Previous
+                            </button>
+                            <button id="cmw-libraries-next-bottom" class="cmw-compare-btn" style="padding: 10px 20px; min-width: 140px;">
+                                Next →
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -11702,6 +11712,8 @@ Think of it like this:
             const librariesStatus = document.getElementById('cmw-libraries-status');
             const librariesPrevBtn = document.getElementById('cmw-libraries-prev');
             const librariesNextBtn = document.getElementById('cmw-libraries-next');
+            const librariesPrevBtnBottom = document.getElementById('cmw-libraries-prev-bottom');
+            const librariesNextBtnBottom = document.getElementById('cmw-libraries-next-bottom');
             const librariesEditModeBtn = document.getElementById('cmw-libraries-edit-mode');
             const librariesExportBtn = document.getElementById('cmw-libraries-export');
             const librariesImportBtn = document.getElementById('cmw-libraries-import');
@@ -12195,11 +12207,16 @@ Think of it like this:
                 const groupName = getSmartLibrariesGroupName(colorsToShow);
                 librariesStatus.textContent = `Showing ${currentLibrariesIndex + 1}-${endIndex} of ${totalColors} | ${groupName}`;
                 
-                // Update button states
+                // Update button states (both top and bottom)
                 librariesPrevBtn.disabled = currentLibrariesIndex === 0;
                 librariesNextBtn.disabled = endIndex >= totalColors;
                 librariesPrevBtn.style.opacity = currentLibrariesIndex === 0 ? '0.5' : '1';
                 librariesNextBtn.style.opacity = endIndex >= totalColors ? '0.5' : '1';
+                
+                librariesPrevBtnBottom.disabled = currentLibrariesIndex === 0;
+                librariesNextBtnBottom.disabled = endIndex >= totalColors;
+                librariesPrevBtnBottom.style.opacity = currentLibrariesIndex === 0 ? '0.5' : '1';
+                librariesNextBtnBottom.style.opacity = endIndex >= totalColors ? '0.5' : '1';
             }
             
             // Get smart group name based on sort method and actual colors displayed
@@ -12585,11 +12602,13 @@ Think of it like this:
                 });
             }
             
-            // Navigation buttons
+            // Navigation buttons (top)
             librariesPrevBtn.addEventListener('click', () => {
                 currentLibrariesIndex = Math.max(0, currentLibrariesIndex - LIBRARIES_COLORS_PER_PAGE);
                 drawLibrariesCanvas();
                 displayLibrariesColors();
+                // Scroll to top of color grid
+                librariesColorsGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
             
             librariesNextBtn.addEventListener('click', () => {
@@ -12598,6 +12617,27 @@ Think of it like this:
                 if (currentLibrariesIndex < 0) currentLibrariesIndex = 0;
                 drawLibrariesCanvas();
                 displayLibrariesColors();
+                // Scroll to top of color grid
+                librariesColorsGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+            
+            // Navigation buttons (bottom)
+            librariesPrevBtnBottom.addEventListener('click', () => {
+                currentLibrariesIndex = Math.max(0, currentLibrariesIndex - LIBRARIES_COLORS_PER_PAGE);
+                drawLibrariesCanvas();
+                displayLibrariesColors();
+                // Scroll to top of color grid
+                librariesColorsGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+            
+            librariesNextBtnBottom.addEventListener('click', () => {
+                const maxIndex = sortedLibrariesColors.length - LIBRARIES_COLORS_PER_PAGE;
+                currentLibrariesIndex = Math.min(maxIndex, currentLibrariesIndex + LIBRARIES_COLORS_PER_PAGE);
+                if (currentLibrariesIndex < 0) currentLibrariesIndex = 0;
+                drawLibrariesCanvas();
+                displayLibrariesColors();
+                // Scroll to top of color grid
+                librariesColorsGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
             
             // Canvas click to jump to color position
