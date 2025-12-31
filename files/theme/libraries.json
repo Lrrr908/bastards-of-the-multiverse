@@ -7,17 +7,17 @@
       "format": "json",
       "enabled": true
     },
-        {
-      "id": "crayola",
-      "name": "CRAYOLA",
-      "file": "library_crayola.json",
-      "format": "json",
-      "enabled": true
-    },
     {
       "id": "bm",
       "name": "Benjamin Moore",
       "file": "benjaminmoore.json",
+      "format": "json",
+      "enabled": true
+    },
+    {
+      "id": "crayola",
+      "name": "CRAYOLA",
+      "file": "library_crayola.json",
       "format": "json",
       "enabled": true
     },
@@ -163,5 +163,6 @@
     }
   ]
 }
+
 
 
