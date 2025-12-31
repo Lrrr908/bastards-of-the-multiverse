@@ -7,10 +7,10 @@
       "format": "json",
       "enabled": true
     },
-    {
-      "id": "sherwin",
-      "name": "Sherwin Williams",
-      "file": "sherwin.json",
+        {
+      "id": "crayola",
+      "name": "CRAYOLA",
+      "file": "library_crayola.json",
       "format": "json",
       "enabled": true
     },
@@ -153,7 +153,15 @@
       "file": "PANTONE_fh_nylon braights_TN.json",
       "format": "json",
       "enabled": true
+    },
+    {
+      "id": "sherwin",
+      "name": "Sherwin Williams",
+      "file": "sherwin.json",
+      "format": "json",
+      "enabled": true
     }
   ]
 }
+
 
