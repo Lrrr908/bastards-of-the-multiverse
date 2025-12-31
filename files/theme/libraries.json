@@ -16,7 +16,7 @@
     },
     {
       "id": "crayola",
-      "name": "CRAYOLA",
+      "name": "Crayol®",
       "file": "library_crayola.json",
       "format": "json",
       "enabled": true
@@ -163,6 +163,7 @@
     }
   ]
 }
+
 
 
 
