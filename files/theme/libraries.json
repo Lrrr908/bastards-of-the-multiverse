@@ -1,13 +1,6 @@
 {
   "libraries": [
     {
-      "id": "adcolor",
-      "name": "Scan of Solid Coated Fanbook",
-      "file": "AdColor_Solid_Coated_V5.json",
-      "format": "json",
-      "enabled": true
-    },
-    {
       "id": "behr",
       "name": "Behr",
       "file": "behr.json",
@@ -163,3 +156,4 @@
     }
   ]
 }
+
