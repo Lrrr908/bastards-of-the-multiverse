@@ -308,38 +308,9 @@ Think of it like this:
             transform: translateX(26px);
         }
         
-        /* Preference Library Checkbox */
-        .cmw-pref-library-checkbox {
-            display: flex;
-            align-items: center;
-            padding: 8px 12px;
-            background: white;
-            border: 2px solid #e2e8f0;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        
-        .cmw-pref-library-checkbox:hover {
-            border-color: #0065a3;
-            background: #f9fafb;
-        }
-        
-        .cmw-pref-library-checkbox input {
-            margin-right: 8px;
-            cursor: pointer;
-        }
-        
-        .cmw-pref-library-checkbox input:checked + label {
-            color: #0065a3;
-            font-weight: 600;
-        }
-        
-        .cmw-pref-library-checkbox label {
-            cursor: pointer;
-            font-size: 13px;
-            color: #374151;
-            margin: 0;
+        /* Preference Library Container (hidden) */
+        #cmw-pref-libraries-container {
+            display: none;
         }
         
         .cmw-search-input-container {
@@ -626,7 +597,7 @@ Think of it like this:
             transition: all 0.2s;
             background: #ffffff;
             width: 100%;
-            max-width: 350px;
+            max-width: 653px;
         }
 
         .cmw-wrap input:focus {
@@ -3147,7 +3118,7 @@ Think of it like this:
             
             <!-- User Preferences Modal -->
             <div id="cmw-preferences-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;">
-                <div style="background: white; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.2);">
+                <div style="background: white; border-radius: 12px; padding: 24px; max-width: 700px; width: 95%; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.2);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                         <h3 style="margin: 0; font-size: 20px; color: #1f2937;">User Preferences</h3>
                         <button id="cmw-preferences-close" style="background: none; border: none; font-size: 28px; color: #6b7280; cursor: pointer; padding: 0; width: 32px; height: 32px; line-height: 1;">&times;</button>
@@ -3167,10 +3138,40 @@ Think of it like this:
                         </div>
                         
                         <!-- Library Selection (shown when toggle is on) -->
-                        <div id="cmw-pref-library-selection" style="display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
-                            <h5 style="margin: 0 0 12px 0; font-size: 14px; color: #374151; font-weight: 600;">Select Libraries to Include:</h5>
-                            <div id="cmw-pref-libraries-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px;">
-                                <!-- Library checkboxes will be populated here -->
+                        <div id="cmw-pref-library-selection" style="display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0; width: 100%;">
+                            <div style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+                                <label for="cmw-pref-library-search" style="font-weight: 600; color: #374151; text-align: center;">Active Libraries:</label>
+                                
+                                <!-- Search Input Container (for positioning dropdown) -->
+                                <div style="position: relative; width: 100%;">
+                                    <input 
+                                        type="text" 
+                                        id="cmw-pref-library-search" 
+                                        placeholder="Search libraries or press ↓" 
+                                        size="1"
+                                        style="width: 100% !important; min-width: 0; padding: 12px 16px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 14px; text-align: center; box-sizing: border-box; display: block;"
+                                        autocomplete="off"
+                                    >
+                                    
+                                    <!-- Predictive Dropdown -->
+                                    <div id="cmw-pref-library-suggestions" style="display: none; position: absolute; top: calc(100% - 2px); left: 0; width: 100%; background: white; border: 2px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); max-height: 200px; overflow-y: auto; z-index: 1000; box-sizing: border-box;">
+                                    </div>
+                                </div>
+                                
+                                <!-- Active Libraries Display -->
+                                <div id="cmw-pref-active-libraries" style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; min-height: 32px; align-items: center;">
+                                    <span style="color: #10b981; font-size: 13px; display: flex; align-items: center; gap: 4px;">
+                                        <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;">
+                                            <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                        All libraries active
+                                    </span>
+                                </div>
+                                
+                                <!-- Hidden checkboxes container -->
+                                <div id="cmw-pref-libraries-container" style="display: none;">
+                                    <!-- Library checkboxes will be populated here -->
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -7713,7 +7714,11 @@ Think of it like this:
                     }
                    
                     // Shorten "Pantone" to "PMS" in display
-                    const displayName = c.name.replace(/^Pantone\s*/i, 'PMS ');
+                    let displayName = c.name.replace(/^Pantone\s*/i, 'PMS ');
+                    // Convert Crayola color names to lowercase
+                    if (c.library === 'crayola') {
+                        displayName = displayName.toLowerCase();
+                    }
                     const displayLibrary = (c.libraryName || 'Unknown').replace(/^Pantone$/i, 'PMS');
                     
                     // Add Amazon link indicator if present (check both field names)
@@ -8149,7 +8154,11 @@ Think of it like this:
                 suggestionEl.dataset.cmykY = s.color.cmyk_y !== undefined ? s.color.cmyk_y : '';
                 suggestionEl.dataset.cmykK = s.color.cmyk_k !== undefined ? s.color.cmyk_k : '';
                 // Shorten "Pantone" to "PMS" in color names for display
-                const displayName = s.color.name.replace(/^Pantone\s*/i, 'PMS ');
+                let displayName = s.color.name.replace(/^Pantone\s*/i, 'PMS ');
+                // Convert Crayola color names to lowercase
+                if (s.color.library === 'crayola') {
+                    displayName = displayName.toLowerCase();
+                }
                 const displayLibrary = (s.color.libraryName || 'Unknown').replace(/^Pantone$/i, 'PMS');
                 // Get the color for the swatch
                 const swatchColor = lab2rgb(s.color.L, s.color.a, s.color.b);
@@ -8206,7 +8215,11 @@ Think of it like this:
                    
                     const nameInput = document.getElementById('cmw-name-input');
                     // Shorten "Pantone" to "PMS" for display
-                    const displayName = suggestionEl.dataset.name.replace(/^Pantone\s*/i, 'PMS ');
+                    let displayName = suggestionEl.dataset.name.replace(/^Pantone\s*/i, 'PMS ');
+                    // Convert Crayola color names to lowercase
+                    if (suggestionEl.dataset.library === 'crayola') {
+                        displayName = displayName.toLowerCase();
+                    }
                     nameInput.value = displayName;
                     document.getElementById('cmw-name-suggestions').classList.remove('show');
                    
@@ -8596,10 +8609,10 @@ Think of it like this:
                 modal.style.display = 'none';
             }
             
-            // Populate library checkboxes in preferences
+            // Populate library checkboxes in preferences (hidden, for tracking)
             function populatePreferenceLibraries() {
-                const grid = document.getElementById('cmw-pref-libraries-grid');
-                grid.innerHTML = '';
+                const container = document.getElementById('cmw-pref-libraries-container');
+                container.innerHTML = '';
                 
                 // Combine public libraries and custom libraries
                 const allLibraries = [];
@@ -8613,7 +8626,6 @@ Think of it like this:
                 
                 // Add custom libraries
                 const customLibs = Object.keys(libs).filter(libId => {
-                    // Check if it's a custom library (not in manifest)
                     return !libraryManifest.some(ml => ml.id === libId);
                 });
                 
@@ -8624,31 +8636,221 @@ Think of it like this:
                 });
                 
                 allLibraries.forEach(lib => {
-                    const checked = userPreferences.selectedLibraries.includes(lib.id);
-                    
-                    const wrapper = document.createElement('div');
-                    wrapper.className = 'cmw-pref-library-checkbox';
+                    // Default to NONE selected (empty array means none, not all)
+                    // Only check if explicitly in selectedLibraries array
+                    const checked = userPreferences.selectedLibraries.length > 0 && userPreferences.selectedLibraries.includes(lib.id);
                     
                     const checkbox = document.createElement('input');
                     checkbox.type = 'checkbox';
                     checkbox.id = `cmw-pref-lib-${lib.id}`;
                     checkbox.value = lib.id;
                     checkbox.checked = checked;
+                    checkbox.dataset.libraryName = lib.name;
+                    checkbox.className = 'cmw-pref-library-checkbox';
                     
-                    const label = document.createElement('label');
-                    label.htmlFor = `cmw-pref-lib-${lib.id}`;
-                    label.textContent = lib.name + (lib.type === 'custom' ? ' (Custom)' : '');
+                    checkbox.addEventListener('change', updatePrefActiveLibrariesDisplay);
                     
-                    wrapper.appendChild(checkbox);
-                    wrapper.appendChild(label);
+                    container.appendChild(checkbox);
+                });
+                
+                // Initialize the display
+                updatePrefActiveLibrariesDisplay();
+                initPrefLibrarySearch();
+            }
+            
+            // Update the active libraries display (chips)
+            function updatePrefActiveLibrariesDisplay() {
+                const activeLibrariesDiv = document.getElementById('cmw-pref-active-libraries');
+                const checkboxes = Array.from(document.querySelectorAll('#cmw-pref-libraries-container input[type="checkbox"]'));
+                const checkedBoxes = checkboxes.filter(cb => cb.checked);
+                
+                activeLibrariesDiv.innerHTML = '';
+                
+                if (checkedBoxes.length === 0) {
+                    // No libraries selected
+                    const noneSpan = document.createElement('span');
+                    noneSpan.style.cssText = 'color: #9ca3af; font-size: 13px; font-style: italic;';
+                    noneSpan.textContent = 'No libraries selected (closest match disabled)';
+                    activeLibrariesDiv.appendChild(noneSpan);
+                } else if (checkedBoxes.length === checkboxes.length) {
+                    // All libraries active
+                    const allActiveSpan = document.createElement('span');
+                    allActiveSpan.style.cssText = 'color: #10b981; font-size: 13px; display: flex; align-items: center; gap: 4px;';
+                    allActiveSpan.innerHTML = `
+                        <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        All libraries active
+                    `;
+                    activeLibrariesDiv.appendChild(allActiveSpan);
+                } else {
+                    // Show specific active libraries
+                    checkedBoxes.forEach(checkbox => {
+                        const chip = document.createElement('div');
+                        chip.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; background: #0065a3; color: white; padding: 6px 12px; border-radius: 16px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s ease;';
+                        chip.innerHTML = `
+                            ${checkbox.dataset.libraryName}
+                            <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        `;
+                        chip.addEventListener('click', () => {
+                            checkbox.checked = false;
+                            checkbox.dispatchEvent(new Event('change'));
+                        });
+                        activeLibrariesDiv.appendChild(chip);
+                    });
+                }
+            }
+            
+            // Initialize preference library search
+            function initPrefLibrarySearch() {
+                const searchInput = document.getElementById('cmw-pref-library-search');
+                const suggestionsDiv = document.getElementById('cmw-pref-library-suggestions');
+                const checkboxes = Array.from(document.querySelectorAll('#cmw-pref-libraries-container input[type="checkbox"]'));
+                
+                let currentMatches = [];
+                let highlightedIndex = -1;
+                let suggestionsVisible = false;
+                
+                function showSuggestions(inputText, forceShowAll = false) {
+                    const query = inputText.toLowerCase().trim();
+                    const showAll = forceShowAll || query === '*' || query.startsWith('* ');
                     
-                    wrapper.addEventListener('click', (e) => {
-                        if (e.target !== checkbox) {
-                            checkbox.checked = !checkbox.checked;
+                    console.log('🔍 Pref showSuggestions:', { inputText, query, forceShowAll, showAll, checkboxCount: checkboxes.length });
+                    
+                    if (query === '' && !forceShowAll) {
+                        suggestionsDiv.style.display = 'none';
+                        suggestionsVisible = false;
+                        currentMatches = [];
+                        highlightedIndex = -1;
+                        return;
+                    }
+                    
+                    const filterText = query.startsWith('* ') ? query.substring(2).trim() : '';
+                    
+                    if (showAll) {
+                        // Show all libraries (optionally filtered)
+                        if (filterText === '') {
+                            // Show ALL libraries
+                            currentMatches = checkboxes;
+                            console.log('⭐ Showing ALL libraries:', currentMatches.length);
+                        } else {
+                            // Show all, but filter by text after asterisk
+                            currentMatches = checkboxes.filter(cb => 
+                                cb.dataset.libraryName.toLowerCase().includes(filterText)
+                            );
+                            console.log('⭐ Showing filtered libraries:', currentMatches.length, 'filter:', filterText);
                         }
+                    } else {
+                        // Normal search
+                        currentMatches = checkboxes.filter(cb => 
+                            cb.dataset.libraryName.toLowerCase().includes(query)
+                        );
+                        console.log('🔎 Normal search results:', currentMatches.length);
+                    }
+                    
+                    if (currentMatches.length === 0) {
+                        suggestionsDiv.style.display = 'none';
+                        suggestionsVisible = false;
+                        return;
+                    }
+                    
+                    suggestionsDiv.innerHTML = '';
+                    currentMatches.forEach((checkbox, index) => {
+                        const div = document.createElement('div');
+                        div.style.cssText = 'padding: 10px 16px; cursor: pointer; transition: background 0.2s; display: flex; justify-content: space-between; align-items: center;';
+                        div.innerHTML = `
+                            <span style="color: #374151;">${checkbox.dataset.libraryName}</span>
+                            ${checkbox.checked ? '<span style="color: #10b981; font-size: 12px;">✓ Active</span>' : '<span style="color: #6b7280; font-size: 12px;">Inactive</span>'}
+                        `;
+                        div.addEventListener('mouseover', () => {
+                            highlightedIndex = index;
+                            updateSuggestionHighlight();
+                        });
+                        div.addEventListener('click', () => {
+                            checkbox.checked = !checkbox.checked;
+                            checkbox.dispatchEvent(new Event('change'));
+                            searchInput.value = '';
+                            suggestionsDiv.style.display = 'none';
+                            suggestionsVisible = false;
+                        });
+                        suggestionsDiv.appendChild(div);
                     });
                     
-                    grid.appendChild(wrapper);
+                    highlightedIndex = -1;
+                    suggestionsDiv.style.display = 'block';
+                    suggestionsVisible = true;
+                }
+                
+                searchInput.addEventListener('input', (e) => {
+                    console.log('📝 Pref input event:', e.target.value);
+                    showSuggestions(e.target.value, false);
+                });
+                
+                searchInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        
+                        if (!suggestionsVisible || currentMatches.length === 0) {
+                            // Show all libraries when dropdown is closed
+                            showSuggestions(e.target.value, true);
+                        } else {
+                            // Navigate down in open dropdown
+                            highlightedIndex = (highlightedIndex + 1) % currentMatches.length;
+                            updateSuggestionHighlight();
+                        }
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        
+                        if (suggestionsVisible && currentMatches.length > 0) {
+                            if (highlightedIndex <= 0) {
+                                // At top - close dropdown
+                                suggestionsDiv.style.display = 'none';
+                                suggestionsVisible = false;
+                                highlightedIndex = -1;
+                                currentMatches = [];
+                            } else {
+                                // Navigate up
+                                highlightedIndex = (highlightedIndex - 1 + currentMatches.length) % currentMatches.length;
+                                updateSuggestionHighlight();
+                            }
+                        }
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (highlightedIndex >= 0 && highlightedIndex < currentMatches.length) {
+                            const checkbox = currentMatches[highlightedIndex];
+                            checkbox.checked = !checkbox.checked;
+                            checkbox.dispatchEvent(new Event('change'));
+                            searchInput.value = '';
+                            suggestionsDiv.style.display = 'none';
+                            suggestionsVisible = false;
+                        }
+                    } else if (e.key === 'Escape') {
+                        suggestionsDiv.style.display = 'none';
+                        suggestionsVisible = false;
+                        searchInput.value = '';
+                    }
+                });
+                
+                function updateSuggestionHighlight() {
+                    const items = suggestionsDiv.children;
+                    Array.from(items).forEach((item, index) => {
+                        if (index === highlightedIndex) {
+                            item.style.background = '#f3f4f6';
+                        } else {
+                            item.style.background = 'white';
+                        }
+                    });
+                }
+                
+                // Close suggestions when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!searchInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
+                        suggestionsDiv.style.display = 'none';
+                        suggestionsVisible = false;
+                    }
                 });
             }
             
@@ -8666,11 +8868,16 @@ Think of it like this:
                 const showClosestCheckbox = document.getElementById('cmw-pref-show-closest');
                 userPreferences.showClosestLibraries = showClosestCheckbox.checked;
                 
-                // Get selected libraries
-                const checkboxes = document.querySelectorAll('#cmw-pref-libraries-grid input[type="checkbox"]');
-                userPreferences.selectedLibraries = Array.from(checkboxes)
-                    .filter(cb => cb.checked)
-                    .map(cb => cb.value);
+                // Get selected libraries from hidden container
+                const checkboxes = document.querySelectorAll('#cmw-pref-libraries-container input[type="checkbox"]');
+                const allCheckboxes = Array.from(checkboxes);
+                const checkedCheckboxes = allCheckboxes.filter(cb => cb.checked);
+                
+                // Save the exact selection
+                // Empty array = no libraries (closest match disabled)
+                // Array with IDs = only those libraries
+                // All checked = treated as all active
+                userPreferences.selectedLibraries = checkedCheckboxes.map(cb => cb.value);
                 
                 saveUserPreferences();
                 closePreferencesModal();
@@ -11347,9 +11554,15 @@ Think of it like this:
                     const textColor = color.L > 60 ? '#1f2937' : '#ffffff';
                     const textShadow = color.L > 60 ? '0 1px 1px rgba(255,255,255,0.8)' : '0 1px 2px rgba(0,0,0,0.5)';
                     
+                    // Convert Crayola color names to lowercase
+                    let displayColorName = color.name;
+                    if (color.library === 'crayola') {
+                        displayColorName = displayColorName.toLowerCase();
+                    }
+                    
                     tile.innerHTML = `
                         <div style="color: ${textColor}; font-size: 10px; font-weight: 600; text-align: center; text-shadow: ${textShadow}; line-height: 1.2;">
-                            ${color.name.length > 20 ? color.name.substring(0, 18) + '...' : color.name}
+                            ${displayColorName.length > 20 ? displayColorName.substring(0, 18) + '...' : displayColorName}
                         </div>
                     `;
                     
@@ -11371,6 +11584,7 @@ Think of it like this:
                         const displayColor = window.getComputedStyle(tile).backgroundColor;
                         showColorModal({
                             name: color.name,
+                            library: color.library,
                             libraryName: color.libraryName || libNames[currentSpectrumLibrary],
                             L: color.L,
                             a: color.a,
@@ -11839,9 +12053,15 @@ Think of it like this:
                     const textColor = color.L > 60 ? '#1f2937' : '#ffffff';
                     const textShadow = color.L > 60 ? '0 1px 1px rgba(255,255,255,0.8)' : '0 1px 2px rgba(0,0,0,0.5)';
                     
+                    // Convert Crayola color names to lowercase
+                    let displayColorName = color.name;
+                    if (color.library === 'crayola') {
+                        displayColorName = displayColorName.toLowerCase();
+                    }
+                    
                     tile.innerHTML = `
                         <div style="color: ${textColor}; font-size: 10px; font-weight: 600; text-align: center; text-shadow: ${textShadow}; line-height: 1.2;">
-                            ${color.name.length > 20 ? color.name.substring(0, 18) + '...' : color.name}
+                            ${displayColorName.length > 20 ? displayColorName.substring(0, 18) + '...' : displayColorName}
                         </div>
                     `;
                     
@@ -11944,6 +12164,7 @@ Think of it like this:
                             const displayColor = window.getComputedStyle(tile).backgroundColor;
                             showColorModal({
                                 name: color.name,
+                                library: color.library,
                                 libraryName: color.libraryName || libNames[currentLibrariesLib],
                                 L: color.L,
                                 a: color.a,
@@ -13565,7 +13786,11 @@ Think of it like this:
                             const color = result.color;
                             const libName = color.libraryName || libNames[color.library] || color.library || '';
                             // Shorten "Pantone" to "PMS" in color names for display
-                            const displayName = color.name.replace(/^Pantone\s*/i, 'PMS ');
+                            let displayName = color.name.replace(/^Pantone\s*/i, 'PMS ');
+                            // Convert Crayola color names to lowercase
+                            if (color.library === 'crayola') {
+                                displayName = displayName.toLowerCase();
+                            }
                             
                             // Use LittleCMS to convert Lab to hex
                             try {
@@ -13637,7 +13862,11 @@ Think of it like this:
                         const colorName = item.dataset.name;
                         const libraryName = item.dataset.library || '';
                         // Shorten "Pantone" to "PMS" for display
-                        const displayName = colorName.replace(/^Pantone\s*/i, 'PMS ');
+                        let displayName = colorName.replace(/^Pantone\s*/i, 'PMS ');
+                        // Convert Crayola color names to lowercase
+                        if (item.dataset.libraryId === 'crayola') {
+                            displayName = displayName.toLowerCase();
+                        }
                         // Use the known Lab values from the library directly
                         const L = parseFloat(item.dataset.labL);
                         const a = parseFloat(item.dataset.labA);
@@ -13742,7 +13971,11 @@ Think of it like this:
                             const colorName = firstItem.dataset.name;
                             const libraryName = firstItem.dataset.library || '';
                             // Shorten "Pantone" to "PMS" for display
-                            const displayName = colorName.replace(/^Pantone\s*/i, 'PMS ');
+                            let displayName = colorName.replace(/^Pantone\s*/i, 'PMS ');
+                            // Convert Crayola color names to lowercase
+                            if (firstItem.dataset.libraryId === 'crayola') {
+                                displayName = displayName.toLowerCase();
+                            }
                             // Use the known Lab values from the library directly
                             const L = parseFloat(firstItem.dataset.labL);
                             const a = parseFloat(firstItem.dataset.labA);
@@ -14298,6 +14531,7 @@ Think of it like this:
                         // Use the unified showColorModal function with all metadata (including RGB & CMYK)
                         showColorModal({
                             name: color.name,
+                            library: color.library,
                             L: color.L,
                             a: color.a,
                             b: color.b,
@@ -16128,7 +16362,12 @@ Think of it like this:
                         }
                     } else {
                         // For other libraries, prepend library name
-                        displayName = `${libraryName} ${name}`;
+                        let colorName = name;
+                        // Convert Crayola color names to lowercase
+                        if (colorData.library === 'crayola' || libraryName.toLowerCase().includes('crayola')) {
+                            colorName = colorName.toLowerCase();
+                        }
+                        displayName = `${libraryName} ${colorName}`;
                     }
                 }
                 
@@ -16661,9 +16900,15 @@ Think of it like this:
                         else if (gridColumns === 2) maxNameLength = 30;
                         else if (gridColumns === 3) maxNameLength = 25;
                         
-                        const displayName = color.name.length > maxNameLength 
-                            ? color.name.substring(0, maxNameLength - 2) + '...' 
-                            : color.name;
+                        let colorNameForDisplay = color.name;
+                        // Convert Crayola color names to lowercase
+                        if (color.library === 'crayola') {
+                            colorNameForDisplay = colorNameForDisplay.toLowerCase();
+                        }
+                        
+                        const displayName = colorNameForDisplay.length > maxNameLength 
+                            ? colorNameForDisplay.substring(0, maxNameLength - 2) + '...' 
+                            : colorNameForDisplay;
                         
                         tile.innerHTML = `
                             <div style="color: ${textColor}; font-size: ${fontSize}; font-weight: 600; text-align: center; text-shadow: ${textShadow}; line-height: 1.3; margin-bottom: 4px; word-wrap: break-word; overflow-wrap: break-word;">
@@ -17279,6 +17524,7 @@ Think of it like this:
                     
                     showColorModal({
                         name: tableRow.dataset.colorName,
+                        library: tableRow.dataset.library,
                         L: parseFloat(tableRow.dataset.colorL),
                         a: parseFloat(tableRow.dataset.colorA),
                         b: parseFloat(tableRow.dataset.colorB),
