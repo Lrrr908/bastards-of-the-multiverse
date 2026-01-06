@@ -924,13 +924,126 @@ def calculate_delta_e_2000(lab1: tuple, lab2: tuple, kL: float = 1.0, kC: float 
     return round(delta_e_2000, 4)
 
 
-def lab_to_cmyk_via_gracol(L: float, a: float, b: float, intent: int = 1) -> List[float]:
+def correct_cmyk_for_pantone(c: float, m: float, y: float, k: float, lab_a: float = 0, lab_b: float = 0) -> tuple:
     """
-    Convert Lab -> CMYK using the GRACoL profile via LittleCMS.
-    NO FALLBACK: if anything fails, raise an error so the caller can
-    surface it to the client.
-    intent: 0=Perceptual, 1=Relative, 2=Saturation, 3=Absolute (LittleCMS codes)
+    Apply Pantone-matched correction curve to CMYK values from LittleCMS+GRACoL.
+    
+    Uses polynomial curve fitting + neutral gray detection based on analysis 
+    of all 2,862 Pantone CMYK Coated colors.
+    
+    Args:
+        c, m, y, k: CMYK values from LittleCMS (0-100)
+        lab_a, lab_b: Lab a* and b* values for neutral gray detection
+    
+    Returns:
+        tuple: Corrected (c, m, y, k) values matching Pantone's style
     """
+    import numpy as np
+    
+    # Calculate chroma to detect neutral grays
+    chroma = (lab_a**2 + lab_b**2) ** 0.5
+    
+    if chroma < 3.0:
+        # NEUTRAL GRAY: Use special handling
+        # Pantone uses pure K for neutrals, GRACoL/LittleCMS adds CMY
+        k_multiplier = 2.064
+        
+        # Increase K significantly
+        k_corrected = min(100, k * k_multiplier)
+        
+        # Drastically reduce CMY for neutrals
+        c_corrected = max(0, c * 0.1)
+        m_corrected = max(0, m * 0.1)
+        y_corrected = max(0, y * 0.1)
+    else:
+        # CHROMATIC COLORS: Use polynomial correction (degree 3)
+        # Fitted from 2,862 Pantone CMYK Coated colors with R² > 0.93
+        
+        # Cyan (R² = 0.9316)
+        c_coeffs = np.array([-6.066322258011086e-05, 0.009666618479999401, 0.6571374764591648, -4.92656281055017])
+        c_poly = np.poly1d(c_coeffs)
+        c_corrected = c_poly(c)
+        
+        # Magenta (R² = 0.9568)
+        m_coeffs = np.array([-6.93240576276352e-05, 0.009484571729588403, 0.7490510691916076, -5.458327384296008])
+        m_poly = np.poly1d(m_coeffs)
+        m_corrected = m_poly(m)
+        
+        # Yellow (R² = 0.9651)
+        y_coeffs = np.array([-5.495365943934537e-05, 0.009107757285786255, 0.6710926597980253, -3.148175686229307])
+        y_poly = np.poly1d(y_coeffs)
+        y_corrected = y_poly(y)
+        
+        # Black (R² = 0.7321)
+        k_coeffs = np.array([5.841520363651343e-05, -0.004850559310122292, 0.9845654576609774, 4.51389510683619])
+        k_poly = np.poly1d(k_coeffs)
+        k_corrected = k_poly(k)
+    
+    # Clamp to valid range
+    c_corrected = max(0, min(100, c_corrected))
+    m_corrected = max(0, min(100, m_corrected))
+    y_corrected = max(0, min(100, y_corrected))
+    k_corrected = max(0, min(100, k_corrected))
+    
+    return (c_corrected, m_corrected, y_corrected, k_corrected)
+
+
+def lab_to_cmyk_via_pantone_lut(L: float, a: float, b: float) -> List[float]:
+    """
+    PROFESSIONAL Lab -> CMYK conversion using Pantone measurement LUT.
+    
+    This is the PROPER way professional software works:
+    - Uses actual Pantone CMYK Coated measurement data
+    - Trilinear interpolation between grid points  
+    - No arbitrary polynomial corrections
+    - Industry-standard ICC profile approach
+    
+    Args:
+        L, a, b: Lab color values (D50)
+    
+    Returns:
+        [c, m, y, k] values (0-100 range)
+    """
+    try:
+        import sys
+        from pathlib import Path
+        
+        # Import LUT converter
+        scripts_dir = BACKEND_DIR.parent / "scripts"
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        
+        from lut_converter import lab_to_cmyk_lut
+        
+        c, m, y, k = lab_to_cmyk_lut(L, a, b)
+        return [round(c, 1), round(m, 1), round(y, 1), round(k, 1)]
+    
+    except Exception as e:
+        raise RuntimeError(f"Pantone LUT conversion failed: {e}")
+
+
+def lab_to_cmyk_via_gracol(L: float, a: float, b: float, intent: int = 1, apply_pantone_correction: bool = True, use_pantone_lut: bool = True) -> List[float]:
+    """
+    Convert Lab -> CMYK using GRACoL profile OR Pantone LUT.
+    
+    Two methods available:
+    1. use_pantone_lut=True: PROFESSIONAL - Uses actual Pantone measurements (RECOMMENDED)
+    2. use_pantone_lut=False: Uses GRACoL + polynomial correction
+    
+    Args:
+        L, a, b: Lab color values
+        intent: Rendering intent (0-3)
+        apply_pantone_correction: Apply polynomial correction (if not using LUT)
+        use_pantone_lut: Use professional Pantone LUT method (RECOMMENDED)
+    
+    Returns:
+        [c, m, y, k] values (0-100 range)
+    """
+    # PROFESSIONAL METHOD: Use Pantone LUT (actual measurements)
+    if use_pantone_lut:
+        return lab_to_cmyk_via_pantone_lut(L, a, b)
+    
+    # LEGACY METHOD: GRACoL + polynomial correction
     try:
         from PIL import ImageCms, Image as PilImage
 
@@ -962,12 +1075,18 @@ def lab_to_cmyk_via_gracol(L: float, a: float, b: float, intent: int = 1) -> Lis
         C, M, Y, K = cmyk_img.getpixel((0, 0))
 
         # 0–255 CMYK to 0–100
-        return [
-            round(C / 255.0 * 100.0, 1),
-            round(M / 255.0 * 100.0, 1),
-            round(Y / 255.0 * 100.0, 1),
-            round(K / 255.0 * 100.0, 1),
+        cmyk = [
+            C / 255.0 * 100.0,
+            M / 255.0 * 100.0,
+            Y / 255.0 * 100.0,
+            K / 255.0 * 100.0,
         ]
+        
+        # Apply Pantone correction curve if requested
+        if apply_pantone_correction:
+            cmyk = list(correct_cmyk_for_pantone(cmyk[0], cmyk[1], cmyk[2], cmyk[3], a, b))
+        
+        return [round(val, 1) for val in cmyk]
 
     except Exception as e:
         # NO SILENT FALLBACK HERE
